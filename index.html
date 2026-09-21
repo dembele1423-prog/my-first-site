@@ -1,56 +1,268 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>تجربتي الأولى</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f0f4f8;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-      text-align: center;
-    }
-    .box {
-      background: white;
-      padding: 40px;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-    }
-    h1 {
-      color: #0d5c63;
-      margin-bottom: 20px;
-    }
-    button {
-      background: #0d5c63;
-      color: white;
-      border: none;
-      padding: 12px 30px;
-      font-size: 18px;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #094247;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>مرحب — دردشة عربية فورية</title>
+  <meta name="description" content="تطبيق دردشة عربي فوري — صُمم ليكون نظيفًا وسريعًا وعادلًا." />
+  <meta name="theme-color" content="#0a0c16" />
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/tokens.css" />
+  <link rel="stylesheet" href="./css/base.css" />
+  <link rel="stylesheet" href="./css/landing.css" />
 </head>
 <body>
-  <div class="box">
-    <h1 id="title">مرحباً بك في موقعي التجريبي</h1>
-    <p>هذا موقع بسيط جدًا للتجربة</p>
-    <br>
-    <button onclick="changeText()">اضغط هنا</button>
+  <div class="landing">
+    <nav class="nav">
+      <a class="nav-brand" href="./">
+        <span class="mark" aria-hidden="true"></span>
+        <span>مرحب</span>
+      </a>
+      <div class="nav-links" aria-label="روابط رئيسية">
+        <a href="#features">المزايا</a>
+        <a href="#showcase">العرض</a>
+        <a href="#start">ابدأ</a>
+      </div>
+      <div class="nav-cta">
+        <button class="nav-theme-btn" id="themeToggle" aria-label="تبديل المظهر">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <a class="btn btn-ghost" href="./login.html">دخول</a>
+        <a class="btn btn-primary" href="./login.html">جرّب الآن</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div class="hero-content">
+        <span class="hero-eyebrow">
+          <span class="dot"></span>
+          متاح الآن — مجاني بالكامل
+        </span>
+        <h1>
+          <span class="line">أهلاً، خلّ</span>
+          <span class="line gradient-text">المحادثة تتنفّس.</span>
+        </h1>
+        <p class="lead">
+          مرحب دردشة عربية فورية صُمّمت بحرص: نظيفة، سريعة، وتُحترم وقتك.
+          افتح تبويبًا وابدأ، كل الإعدادات محفوظة على جهازك بلا حساب ولا تعقيد.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="./login.html">
+            ابدأ المحادثة
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          </a>
+          <a class="btn btn-soft" href="#features">اكتشف المزايا</a>
+        </div>
+        <div class="hero-meta">
+          <div class="stat">
+            <span class="stat-n">٠</span>
+            <span class="stat-l">إعلانات، صفر</span>
+          </div>
+          <div class="stat">
+            <span class="stat-n">٤</span>
+            <span class="stat-l">غرف جاهزة</span>
+          </div>
+          <div class="stat">
+            <span class="stat-n">٢٤/٧</span>
+            <span class="stat-l">متزامن دائمًا</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-preview" aria-hidden="true">
+        <div class="hero-card">
+          <div class="hero-card-head">
+            <div class="avatars">
+              <div class="av" style="background:#7c5cff">ل</div>
+              <div class="av" style="background:#ff5fa2">ر</div>
+              <div class="av" style="background:#4ddcff">ن</div>
+            </div>
+            <span class="label">غرفة #عام — ٣ متصلين الآن</span>
+          </div>
+          <div class="hero-card-msgs">
+            <div class="bubble them delay-1">
+              مساء الخير جميعًا 👋<br>كيف يبدأ أسبوعكم؟
+              <div class="meta">ليلى · 19:42</div>
+            </div>
+            <div class="bubble you delay-2">
+              تمام الحمد لله، اليوم بدأت أعدّل على مشروع جديد.
+              <div class="meta">19:43 ✓✓</div>
+            </div>
+            <div class="hero-typing delay-3">
+              <span></span><span></span><span></span>
+            </div>
+            <div class="bubble them delay-4">
+              واو، شاركنا لما يجهز!
+              <div class="meta">نورة · 19:44</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section class="features" id="features">
+      <div class="section-head reveal">
+        <span class="eyebrow">ليش مرحب</span>
+        <h2>أدوات واضحة،<br>بدون فوضى.</h2>
+        <p>كل ميزة صُمّمت لتخدم المحادثة، لا لتسرق انتباهك. لا نوافذ منبثقة، لا تعقيدات، فقط ما تحتاجه.</p>
+      </div>
+      <div class="features-grid">
+        <article class="feature reveal" style="--accent-color: #7c5cff">
+          <div class="icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <h3>فوري فعلاً</h3>
+          <p>الرسائل تظهر في اللحظة. مؤشرات الكتابة تظهر وأنت تكتب، وحالة القراءة تتحدّث فورًا.</p>
+        </article>
+        <article class="feature reveal" style="--accent-color: #ff5fa2">
+          <div class="icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>خصوصية تحترمك</h3>
+          <p>اختيارك للتشغيل Local فقط أو ربط Firebase. لا نخزّن بيانات على خوادمنا، لأن لا خوادم لنا في الأساس.</p>
+        </article>
+        <article class="feature reveal" style="--accent-color: #4ddcff">
+          <div class="icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
+          </div>
+          <h3>أربع غرف جاهزة</h3>
+          <p>عام، تقنية، عشوائي، تصميم. انضم لأي غرفة بضغطة، أو أضف غرفًا لاحقًا من الإعدادات.</p>
+        </article>
+        <article class="feature reveal" style="--accent-color: #ffb572">
+          <div class="icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </div>
+          <h3>بحث سريع</h3>
+          <p>ابحث في أي غرفة عن كلمات أو أسماء مستخدمين. النتائج تظهر فوراً مع تحديد النص المطابق.</p>
+        </article>
+        <article class="feature reveal" style="--accent-color: #45e0a3">
+          <div class="icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h3>ردود فعل وردود</h3>
+          <p>أضِف رد فعل على أي رسالة، أو اقتبس منها للرد في السياق. كل شيء بنقرة واحدة.</p>
+        </article>
+        <article class="feature reveal" style="--accent-color: #c65cff">
+          <div class="icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          </div>
+          <h3>مظهران، أنيقان</h3>
+          <p>ليلي افتراضي ودافئ نهاري. التبديل سلس، ويحفظ تفضيلك تلقائيًا في كل جهاز.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="showcase" id="showcase">
+      <div class="showcase-inner reveal">
+        <div>
+          <div class="showcase-text">
+            <span class="eyebrow" style="color:var(--accent-2); font-size:var(--fs-xs); letter-spacing:0.16em; text-transform:uppercase;">جولة سريعة</span>
+            <h2>أربع غرف.<br>كل واحدة لها طابع.</h2>
+            <p>غرفة لكل اهتمام. تصفّح، انضم، أو اصنع غرفتك الخاصة. المرجع يحفظ آخر غرفة كنت فيها.</p>
+            <ul class="showcase-list">
+              <li>
+                <span class="check" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                </span>
+                متصلون مباشرون — حالة On يظهر فورًا.
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                </span>
+                تثبيت رسائل مهمّة في أعلى كل غرفة.
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                </span>
+                رسائل مثبتة وأرشيف الرسائل ينظّفان نفسيهما.
+              </li>
+              <li>
+                <span class="check" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                </span>
+                كل الإعدادات سحابية بشكل اختياري، تلغيها إذا شئت.
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <div class="mock-rooms" role="presentation">
+            <div class="mock-rooms-title">غرف متاحة</div>
+            <div class="mock-room is-active">
+              <span class="r-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/></svg>
+              </span>
+              <div>
+                <div class="r-name"># عام</div>
+                <div class="r-desc">كل المواضيع العامة</div>
+              </div>
+              <span class="r-meta"><span class="badge">٧</span></span>
+            </div>
+            <div class="mock-room">
+              <span class="r-icon" aria-hidden="true" style="color: var(--accent-2)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </span>
+              <div>
+                <div class="r-name"># تقنية</div>
+                <div class="r-desc">كل ما يخص التقنية</div>
+              </div>
+              <span class="r-meta"><span class="badge" style="background: var(--accent-success); color: #023024">٣</span></span>
+            </div>
+            <div class="mock-room">
+              <span class="r-icon" aria-hidden="true" style="color: var(--accent-warm)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+              </span>
+              <div>
+                <div class="r-name"># عشوائي</div>
+                <div class="r-desc">دردشة حرة بلا حدود</div>
+              </div>
+              <span class="r-meta"></span>
+            </div>
+            <div class="mock-room">
+              <span class="r-icon" aria-hidden="true" style="color: var(--accent-3)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c0-4 4-7 9-7s9 3 9 7-4 7-9 7c-2 0-4-.4-5.5-1.2L3 19l1.2-3.5C3.5 14.4 3 13.2 3 12z"/></svg>
+              </span>
+              <div>
+                <div class="r-name"># تصميم</div>
+                <div class="r-desc">نقاشات التصميم والإلهام</div>
+              </div>
+              <span class="r-meta"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="final-cta" id="start">
+      <h2 class="reveal">جاهز تغوص في<br><span class="gradient-text">محادثة مريحة؟</span></h2>
+      <p class="reveal">ابدأ بـ ٣٠ ثانية. سمّ نفسك، اختر لونك، انضم للغرفة العامة، وقل مرحب.</p>
+      <a class="btn btn-primary reveal" href="./login.html" style="font-size: var(--fs-lg); padding: 16px 30px;">
+        افتح الدردشة
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+      </a>
+    </section>
+
+    <footer class="footer">
+      <span>مرحب · تجربة دردشة عربية</span>
+      <div class="links">
+        <a href="#features">المزايا</a>
+        <a href="./login.html">دخول</a>
+      </div>
+      <span class="faint">صُنع بحرص</span>
+    </footer>
   </div>
 
-  <script>
-    function changeText() {
-      document.getElementById("title").innerText = "تم التحديث بنجاح!";
-    }
-  </script>
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <script src="./js/utils.js"></script>
+  <script src="./js/theme.js"></script>
+  <script src="./js/landing.js"></script>
 </body>
 </html>
