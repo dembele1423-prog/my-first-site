@@ -152,6 +152,9 @@ a{color:var(--navy-2)}
 <body>
 <div id="app"></div>
 <script type="module">
+/* ============================================================
+   نظام فحص الصهاريج اليومي — النسخة المحدّثة
+   ============================================================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
@@ -159,7 +162,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection,
-  query, where, orderBy, onSnapshot, serverTimestamp, limit as qlimit, getDocs
+  query, where, orderBy, onSnapshot, serverTimestamp, limit as qlimit
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   getStorage, ref as sref, uploadBytes, getDownloadURL
@@ -181,26 +184,26 @@ const db = getFirestore(fbApp);
 const storage = getStorage(fbApp);
 
 const SUPER_ADMIN_EMAIL = "abdullahalmalki484@gmail.com";
+
 const ISSUE_WARNING_THRESHOLD = 1;
 const ISSUE_CRITICAL_THRESHOLD = 3;
 
-/* ============================================================
-   ⚠️ مهم: استبدل السطر التالي بمصفوفة EQUIPMENT كاملة من ملفك القديم
-   (من  const EQUIPMENT = [{"code":"VT19-001"...  حتى  ...}];  )
-   ============================================================ */
-const EQUIPMENT = [];
+/* ---------- بيانات المعدات ---------- */
+const EQUIPMENT = [{"code":"VT19-001","plate_ar":"ب ع د 6899","plate_en":"6899 D E B","chassis":"RS3KHNAJ8P0634899","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"زجاج السائق مكسور\nلا يوجد لي أسطوانة عزل المضخة","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز امامي مكسور","safety_lights":"","notes":""},{"code":"VT19-002","plate_ar":"ب ع ب 7360","plate_en":"7360 B E B","chassis":"RS3KHNAJ8P0707933","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"غطاء فلشر يمين مفقود","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nمشكلة في السلف","barriers":"","safety_lights":"","notes":""},{"code":"VT19-003","plate_ar":"ب ع ب 7377","plate_en":"7377 B E B","chassis":"RS3KHNAJ1P0710284","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"اطار خلفي تالف","chassis_frame":"موعد صيانة الزيت","barriers":"اثر حادث في الحاجز","safety_lights":"","notes":""},{"code":"VT19-004","plate_ar":"ب ع د 6859","plate_en":"6859 D E B","chassis":"RS3KHNAJ7P0669384","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"الاضاءات الخلفية لا تعمل","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"لمبة جانبية مفقودة","notes":""},{"code":"VT19-005","plate_ar":"ب ع ب 5320","plate_en":"5320 B E B","chassis":"RS3KHNAJ6P0708532","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثر حادث في الحاجز الأوسط","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"اثر حادث في الحاجز الايسر\nحواجز خلفية متهالكه","safety_lights":"لمبات جانبية يمين/يسار مفقوده","notes":""},{"code":"VT19-006","plate_ar":"ب ع د 6820","plate_en":"6820 D E B","chassis":"RS3KHNAJXP0644074","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثر حادث في سلم الراكب","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-007","plate_ar":"ب ع ب 7346","plate_en":"7346 B E B","chassis":"RS3KHNAJ1P0711046","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثر حادث في مقدمة المركبة الجهة اليمنى\nتسريب هواء من فلتر المضخة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجر امامي يمين مكسور","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-008","plate_ar":"ب ع د 6814","plate_en":"6814 D E B","chassis":"RS3KHNAJ8P0644462","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثر حادث في سلم السائق\nلايوجد غطاء بطارية","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-009","plate_ar":"ب ع د 6970","plate_en":"6970 D E B","chassis":"RS3KHNAJ2P0668532","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"غطاء فلشر مفقود\nكسر شبك النور\nاثر حادث في الصدام الامامي والخلفي","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nتنسيم في لي الفرامل\nتبديل تروس القير التوماتيكي","barriers":"","safety_lights":"","notes":""},{"code":"VT19-010","plate_ar":"ب ع د 6806","plate_en":"6806 D E B","chassis":"RS3KHNAJ2P0668143","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عمود مضخة مكسور","batteries":"لاتعمل","tires":"اطار احتياطي مفقود\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز امامي يمين مكسور","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-011","plate_ar":"ب ع د 6856","plate_en":"6856 D E B","chassis":"RS3KHNAJ8P0670978","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nقطع في سير المكينة","barriers":"حاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-012","plate_ar":"ب ع د 6900","plate_en":"6900 D E B","chassis":"RS3KHNAJ0P0707926","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عمود مضخة مكسور","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز امامي يمين مكسور","safety_lights":"","notes":"غطاء فلشر مفقود\nاثر حادث في الصدام الامامي"},{"code":"VT19-013","plate_ar":"ب ع د 6819","plate_en":"6819 D E B","chassis":"RS3KHNAJ8P0668938","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثر حادث في الصدام الامامي والخلفي","batteries":"تعمل","tires":"اطار خلفي يسار محبل\nاطار خلفي يمين متهالك\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز امامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-014","plate_ar":"ب ع ب 9836","plate_en":"9836 B E B","chassis":"RS3KHNAJ4P0668936","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"لمبة خلفية لاتعمل (مشكلة في الضفيرة)","batteries":"تعمل","tires":"اطار خلفي يمين محبل\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز امامي يمين مكسور\nجاجز خلفي يمين مكسور(مفقود)","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-015","plate_ar":"ب ع د 6807","plate_en":"6807 D E B","chassis":"RS3KHNAJ4P0668144","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار خلفي يمين متهالك\nاطار خلفي يسار محبل\nاطار احتياطي مفقود\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت\nمستولا الزيت منخفض","barriers":"","safety_lights":"","notes":""},{"code":"VT19-016","plate_ar":"ب ع ب 5325","plate_en":"5325 B E B","chassis":"RS3KHNAJ0P0707523","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يسار مكسور (مفقود)","safety_lights":"","notes":"لايوجد شبك اسطب خلفي\nاثر حادث قي سلم الراكب"},{"code":"VT19-017","plate_ar":"ب ع ب 7227","plate_en":"7227 D E B","chassis":"RS3KHNAJ0P0668531","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"لوحة المعدة  الامامية مفقودة","batteries":"لاتعمل","tires":"كسر في فك المسمار للاطار الامامي\nاطار احتياطي مفقود\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"الحواجز متهالكه","safety_lights":"","notes":""},{"code":"VT19-018","plate_ar":"ب ع ب 7381","plate_en":"7381 B E B","chassis":"RS3KHNAJ5P0707128","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عمود مضخة مكسور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"الحاجز الأوسط مكسور","safety_lights":"الإضاءة الجانبية مفقودة","notes":"اثر حادث في سلم الراكب"},{"code":"VT19-019","plate_ar":"ب ع د 6862","plate_en":"6862 D E B","chassis":"RS3KHNAJ4P0667558","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"غطى علبة زيت المضخة مفقود","batteries":"لاتعمل","tires":"اطار احتياطي مفقود","chassis_frame":"موعد صيانة الزيت\nدينمو/ سلف","barriers":"","safety_lights":"","notes":""},{"code":"VT19-020","plate_ar":"ب ع ب 7351","plate_en":"7351 B E B","chassis":"RS3KHNAJXP0667564","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nتعريف مفتاح","barriers":"جاجز امامي يمين مكسور\nحاجز خلفي يمين مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-021","plate_ar":"ب ع ب 7344","plate_en":"7344 B E B","chassis":"RS3KHNA12P0713498","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عمود مضخة مكسور","batteries":"لاتعمل","tires":"اطار امامي يسار فاقد هواء\nمقاس 385/95/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-022","plate_ar":"ب ع ب 9837","plate_en":"9837 B E B","chassis":"RS3KHNAJ0P0668142","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"اطار خلفي يمين فاقد الهواء\nمقاس 325/95/24\nاطار احتياطي مفقود","chassis_frame":"موعد صيانة الزيت\nقطع في سير المكينة","barriers":"حاجز امامي يمين مكسور\nحاجز خلفي يمين مكسور","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-023","plate_ar":"ب ع د 6812","plate_en":"6812 D E B","chassis":"RS3KHNAJ5P0634486","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار خلفي يمين \nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حواجز خلفية متهالكة","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-024","plate_ar":"ب ع د 6966","plate_en":"6966 D E B","chassis":"RS3KHNAJ9P0664090","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار احتياطي فاقد للهواء","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-025","plate_ar":"ب ع د 6858","plate_en":"6858 D E B","chassis":"RS3KHNAJ5P0669383","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"محبس تفريغ مكسور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-026","plate_ar":"ب ع د 6861","plate_en":"6861 D E B","chassis":"RS3KHNAJXP0669380","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عمود مضخة مكسور","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور\nجاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-027","plate_ar":"ب ع ب 9833","plate_en":"9833 B E B","chassis":"RS3KHNAJ2P0724727","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"عمود مضخة مكسور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-028","plate_ar":"ب ع د 6824","plate_en":"6824 D E B","chassis":"RS3KHNAJ0P0643144","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"اطار امامي يمين مبنشر\nمقاس 385/65/22.5\nالاطار الخلفي يسار مبنشر","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور\nجاجز خلفي يمين مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-029","plate_ar":"ب ع ب 5322","plate_en":"5322 B E B","chassis":"RS3KHNAJ4P0707928","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار خلفي يمين \nمقاس 315/80/22.5\nاطار احتياطي مفقود\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت\nغطى البطارية مفقود","barriers":"حاجز امامي يمين مكسور\nحاجز أوسط مكسور","safety_lights":"","notes":""},{"code":"VT19-030","plate_ar":"ب ع ب 7396","plate_en":"7396 B E B","chassis":"RS3KHNAJXP0710283","size":19,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nقطع في سير المكينه","barriers":"","safety_lights":"","notes":""},{"code":"VT19-031","plate_ar":"ب ع ب 7228","plate_en":"7228 B E B","chassis":"RS3KHNAJ4P0668533","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"اطار خلفي يمين مبنشر\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز مكسور","safety_lights":"","notes":""},{"code":"VT19-032","plate_ar":"ب ع د 6823","plate_en":"6823 D E B","chassis":"RS3KHNAJ0P0634038","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"عوامة محروقة","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-033","plate_ar":"ب ع ب 5321","plate_en":"5321 B E B","chassis":"RS3KHNAJ2P0707927","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nيهريب من صوفة المكينه","barriers":"","safety_lights":"","notes":""},{"code":"VT19-034","plate_ar":"ب ع ب 7170","plate_en":"7170 B E B","chassis":"RS3KHNAJ9P0668530","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار احتياطي مفقود","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز امامي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-035","plate_ar":"ب ع ب 5326","plate_en":"5326 B E B","chassis":"R53KHNA18P0707527","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"العوامة لا تعمل على إيقاف المضخة\nشرخ عمود مضخة","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز امامي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-036","plate_ar":"ب ع ب 5342","plate_en":"5342 B E B","chassis":"RS3KHNA13P0725109","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"شبك امامي مفقود","batteries":"تعمل","tires":"اطار احتياطي مفقود\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز مكسور","safety_lights":"اضاءة سِلامة خلفية لا تعمل","notes":""},{"code":"VT19-037","plate_ar":"ب ع ب 7370","plate_en":"7370 B E B","chassis":"RS3KHNAJ0P0668934","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"محبس تفريغ مكسور","batteries":"لاتعمل","tires":"اطار احتياطي مفقود\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت\nغطاء بطارية مفقود","barriers":"حاجز مكسور","safety_lights":"","notes":""},{"code":"VT19-038","plate_ar":"ب ع ب 7348","plate_en":"7348 B E B","chassis":"RS3KHNAJOP0713497","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"في الورشة","pump":"","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-039","plate_ar":"ب ع ب 9838","plate_en":"9838 B E B","chassis":"RS3KHNAJ1P0707126","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"في الورشة","pump":"","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-040","plate_ar":"ب ع ب 7364","plate_en":"7364 B E B","chassis":"RS3KHNAJ2P0709225","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عوامة محروقة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز مكسور","safety_lights":"اضاءة سلامة جانبية مفقوده","notes":"سلم درج مكسور\nشبك اسطب خلفي مفقود"},{"code":"VT19-041","plate_ar":"ب ع ب 7393","plate_en":"7393 B E B","chassis":"RS3KHNAJ8P0661472","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"شبك اسطب خلفي مفقود","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-042","plate_ar":"ب ع ب 5323","plate_en":"5323 B E B","chassis":"RS3KHNAJ6P0707929","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"شبك اسطب خلفي يسار مفقود\nوزن سير المضخة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-043","plate_ar":"ب ع د 6809","plate_en":"6809 D E B","chassis":"RS3KHNAJ2P0668935","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار احتياطي مفقود\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت\nالمكيف لايعمل","barriers":"","safety_lights":"","notes":""},{"code":"VT19-044","plate_ar":"ب ع ب 7378","plate_en":"7378 B E B","chassis":"RS3KHNAJ3P0705913","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"لاتعمل","general_faults":"وزنية المركبة بسبب الكفرات\nغطى لمبة فلشر يمين مفقود","batteries":"لاتعمل","tires":"اطار خلفي خارجي يمين\nمقاس 315/80/22.5\nاطار احتياطي مفقود\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز مكسور","safety_lights":"","notes":""},{"code":"VT19-045","plate_ar":"ب ع ب 7355","plate_en":"7355 B E B","chassis":"RS3KHNAJ3P0708181","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"شبك اسطب خلفي يسار مفقود","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-046","plate_ar":"ب ع ب 7343","plate_en":"7343 B E B","chassis":"RS3KHNAJ5P0709227","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"محبس تفريغ مكسور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز يمين الامامي مكسور","safety_lights":"","notes":""},{"code":"VT19-047","plate_ar":"ب ع ب 7361","plate_en":"7361 B E B","chassis":"RS3KHNAJ4P0670976","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار خلفي خارجي يسار \nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-048","plate_ar":"ب ع د 6828","plate_en":"6828 D E B","chassis":"RS3KHNAJ0P0642091","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"العوامة لا تعمل على إيقاف المضخة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-049","plate_ar":"ب ع ب 5319","plate_en":"5319 B E B","chassis":"RS3KHNAJXP0708534","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عوامة محروقة","batteries":"تعمل","tires":"اطار خلفي خارجي يسار\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور (مفقود)\nحاجز خلفي يسار مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-050","plate_ar":"ب ع ب 7384","plate_en":"7384 B E B","chassis":"RS3KHNAJ4P0706729","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز أمامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-051","plate_ar":"ب ع ب 7373","plate_en":"7373 B E B","chassis":"RS3KHNAJ8P0711769","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور  (مفقود)","safety_lights":"","notes":""},{"code":"VT19-052","plate_ar":"ب ع ب 7383","plate_en":"7383 B E B","chassis":"RS3KHNAJ0P0706730","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار امامي يسار مبنشر\nمقاس 385/65/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-053","plate_ar":"ب ع ب 7380","plate_en":"7380 B E B","chassis":"RS3KHNAJXP0705911","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار خلفي خارجي يمين\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"‏حاجز  امامي يمين مكسور\nحاجز  خلفي يمين مكسور (مفقود)\nحاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-054","plate_ar":"ب ع ب 5324","plate_en":"5324 B E B","chassis":"RS3KHINAJ2P0707524","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار خلفي يمين\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-055","plate_ar":"ب ع ب 7356","plate_en":"7356 B E B","chassis":"RS3KHNAJ8P0707124","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-056","plate_ar":"ب ع د 6822","plate_en":"6822 D E B","chassis":"RS3KHNAJ2P0643145","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"زجاج السائق مكسور","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-057","plate_ar":"ب ع ب 7376","plate_en":"7376 B E B","chassis":"RS3KHNAJ9P0669385","size":19,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"محبس تفريغ مكسور","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nتنسيم في لي الفرامل","barriers":"","safety_lights":"","notes":""},{"code":"VT19-058","plate_ar":"ب ع ب 5344","plate_en":"5344 B E B","chassis":"RS3KHNA13P0710660","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"اطار احتياطي مفقود\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-059","plate_ar":"ب ع ب 7395","plate_en":"7395 B E B","chassis":"RS3KHNAJ8P0710282","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-060","plate_ar":"ب ع ب 7374","plate_en":"7374 B E B","chassis":"RS3KHNAJ1P0708535","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-061","plate_ar":"ب ع د 6860","plate_en":"6860 D E B","chassis":"RS3KHNAJ3P0669379","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"قفل باب السائق لايعمل\nزجاج  باب السائق مكسور","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nتنسيم في لي الفرامل","barriers":"","safety_lights":"","notes":""},{"code":"VT19-062","plate_ar":"ب ع ب 7394","plate_en":"7394 B E B","chassis":"RS3KHNAJXP0661473","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nزيت المكينة ناقص","barriers":"","safety_lights":"","notes":""},{"code":"VT19-063","plate_ar":"ب ع ب 7362","plate_en":"7362 B E B","chassis":"RS3KHNAJ7P0708183","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار امامي يمين\nمقاس 385/65/22.52","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-064","plate_ar":"ب ع ب 7353","plate_en":"7353 B E B","chassis":"RS3KHNAJ6P0667562","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"الاضاءات جهة الراكب لا تعمل","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-065","plate_ar":"ب ع د 6818","plate_en":"6818 D E B","chassis":"RS3KHNAJ1P0614865","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nغطاء الديزل عطلان","barriers":"","safety_lights":"","notes":""},{"code":"VT19-066","plate_ar":"ب ع د 6967","plate_en":"6967 D E B","chassis":"RS3KHNAJ6P0626591","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-067","plate_ar":"ب ع د 6808","plate_en":"6808 D E B","chassis":"RS3KHNAJ6P0668145","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"لاتعمل","general_faults":"عمود مضخة مكسور","batteries":"لاتعمل","tires":"3 اطارات خلفية يمين \nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-068","plate_ar":"ب ع ب 5341","plate_en":"5341 B E B","chassis":"RS3KHNA14P0707931","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-069","plate_ar":"ب ع د 6826","plate_en":"6826 D E B","chassis":"RS3KHNAJ4P0635631","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-070","plate_ar":"ب ع د 6811","plate_en":"6811 D E B","chassis":"RS3KHNAJ5P0634035","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"عمود مضخة مكسور","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-071","plate_ar":"ب ع ب 5343","plate_en":"5343 B E B","chassis":"RS3KHNAJ4P0709226","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nقطع في سير المكينة","barriers":"","safety_lights":"","notes":""},{"code":"VT19-072","plate_ar":"ب ع د 6829","plate_en":"6829 D E B","chassis":"RS3KHNAJ1P0636431","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور\nحاجز جانبي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-073","plate_ar":"ب ع ب 5318","plate_en":"5318 B E B","chassis":"RS3KHNAJ2P0706731","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-074","plate_ar":"ب ع ب 7363","plate_en":"7363 B E B","chassis":"RS3KHNAJ9P0708184","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-075","plate_ar":"ب ع ب 7392","plate_en":"7392 B E B","chassis":"RS3KHNAJ1P0661474","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"لاتعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nزيت المكينة ناقص","barriers":"","safety_lights":"","notes":""},{"code":"VT19-076","plate_ar":"ب ع ب 7398","plate_en":"7398 B E B","chassis":"RS3KHNAJ7P0712072","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار امامي يمين مبنشر\nمقاس 385/65/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور\nحاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-077","plate_ar":"ب ع ب 7375","plate_en":"7375 B E B","chassis":"RS3KHNAJOP0669386","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nغطاء الديزل لا يعمل","barriers":"","safety_lights":"","notes":""},{"code":"VT19-078","plate_ar":"ب ع د 6825","plate_en":"6825 D E B","chassis":"RS3KHNAJ1P0642844","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nتنسيم في لي الفرامل","barriers":"","safety_lights":"","notes":""},{"code":"VT19-079","plate_ar":"ب ع د 6813","plate_en":"6813 D E B","chassis":"RS3KHNAJ8P0642551","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"شرخ عمود مضخة","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-080","plate_ar":"ب ع ب 7397","plate_en":"7397 B E B","chassis":"RS3KHNAJ3P0707130","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"قطع في لي أسطوانة عزل المضخة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور\nحاجز خلفي يسار مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-081","plate_ar":"ب ع ب 7379","plate_en":"7379 B E B","chassis":"RS3KHNAJ8P0705910","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"صوت في المضخة + شد سيور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يمين مكسور\nحاجز وسطي يسار مكسور\nحاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-082","plate_ar":"ب ع د 6969","plate_en":"6969 D E B","chassis":"RS3KHNAJ6P0654990","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"صوت في المضخة + شد سيور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-083","plate_ar":"ب ع ب 5340","plate_en":"5340 B E B","chassis":"R53KHNAJ6P0707526","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nقطع في سير المكينة","barriers":"","safety_lights":"","notes":""},{"code":"VT19-084","plate_ar":"ب ع ب 7357","plate_en":"7357 B E B","chassis":"RS3KHNAJ6P0707123","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-085","plate_ar":"ب ع د 6857","plate_en":"6857 D E B","chassis":"RS3KHNAJ1P0667565","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يسار مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-086","plate_ar":"ب ع ب 7345","plate_en":"7345 B E B","chassis":"RS3KHNAJ6P0710278","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-087","plate_ar":"ب ع ب 5317","plate_en":"5317 B E B","chassis":"RS3KHNAJ6P0661471","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار امامي يمين \nمقاس 385/65/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز جانبي يسار مكسور\nحاجز خلفي يسار مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-088","plate_ar":"ب ع د 6855","plate_en":"6855 D E B","chassis":"RS3KHNAJ6P0670977","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز وسطي يسار مكسور\nحاجز خلفي يسار مكسور\nجاجز خلفي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-089","plate_ar":"ب ع ب 7371","plate_en":"7371 B E B","chassis":"RS3KHNAJ5P0708182","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"حلق (خاتم) تثبيت لي السحب","batteries":"لاتعمل","tires":"اطار خلفي يسار \nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-090","plate_ar":"ب ع د 6821","plate_en":"6821 D E B","chassis":"RS3KHNAJ7P0644467","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"لاتعمل","general_faults":"حادث\nكسر في وجهة فلتر المضخة\nحلق (خاتم) تثبيت لي السحب","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-091","plate_ar":"ب ع ب 7352","plate_en":"7352 B E B","chassis":"RS3KHNAJ8P0667563","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-092","plate_ar":"ب ع ب 7359","plate_en":"7359 B E B","chassis":"RS3KHNAJ6P0707932","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-093","plate_ar":"ب ع د 6810","plate_en":"6810 D E B","chassis":"RS3KHNAJ1P0636428","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"حلق (خاتم) تثبيت لي السحب","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"حاجز خلفي يسار مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-094","plate_ar":"ب ع د 6451","plate_en":"6451 D E B","chassis":"RS3KHNAJ2P0707930","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار احتياطي \nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت\nتعريف مفتاح","barriers":"حاجز خلفي يمين مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-095","plate_ar":"ب ع د 6815","plate_en":"6815 D E B","chassis":"RS3KHNAJ7P0643142","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nدرجة حرارة سائل التبريد مرتفعة","barriers":"جاجز خلفي يمين مكسور (مفقود)","safety_lights":"","notes":""},{"code":"VT19-096","plate_ar":"ب ع د 6849","plate_en":"6849 D E B","chassis":"RS3KHNAJ8P0654991","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"حلق (خاتم) تثبيت لي السحب","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nزيت دركسون","barriers":"جاجز وسطي وامامي وخلفي يسار مكسور\nجاجز امامي يمين مكسور\nجاجز خلفي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-097","plate_ar":"ب ع ب 9835","plate_en":"9835 B E B","chassis":"RS3KHNAJ7P0710662","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"باب السائق لايغلق عليها حادث","batteries":"لاتعمل","tires":"اطار احتياطي \nمقاس 385/65/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-098","plate_ar":"ب ع د 6827","plate_en":"6827 D E B","chassis":"RS3KHNAJ2P0642092","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"بنشر في الاطار الامامي يمين","batteries":"تعمل","tires":"اطار امامي يمين\n385/65/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-099","plate_ar":"ب ع ب 7382","plate_en":"7382 B E B","chassis":"RS3KHNAJ2P0706728","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"حادث في البرايمر مان هول للصهريج","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-100","plate_ar":"ب ع ب 7347","plate_en":"7347 B E B","chassis":"RS3KHNAJ3P0711047","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"في الورشة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-101","plate_ar":"ب ع د 6817","plate_en":"6817 D E B","chassis":"RS3KHNAJ4P0641834","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"زجاج السائق مكسور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-102","plate_ar":"ب ع د 6802","plate_en":"6802 D E B","chassis":"RS3KHNAJ3P0644465","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-103","plate_ar":"ب ع د 6816","plate_en":"6816 D E B","chassis":"RS3KHNAJ6P0644461","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"حلق (خاتم) تثبيت لي السحب","batteries":"تعمل","tires":"اطار خلفي خارجي يسار\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-104","plate_ar":"ب ع ب 9834","plate_en":"9834 B E B","chassis":"RS3KHNAJ6P0670980","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"محبس تفريغ مكسور","batteries":"تعمل","tires":"اطار خلفي خارجي يسار\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-105","plate_ar":"ب ع د 6801","plate_en":"6801 D E B","chassis":"RS3KHNAJXP0644463","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nالمكينة","barriers":"","safety_lights":"","notes":""},{"code":"VT19-106","plate_ar":"ب ع د 6893","plate_en":"6893 D E B","chassis":"RS3KHNAJ2P0664089","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"حلق (خاتم) تثبيت لي السحب","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-107","plate_ar":"ب ع ب 7391","plate_en":"7391 B E B","chassis":"RS3KHNAJ5P0711051","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"اطار خلفي خارجي يسار\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت\nقطع في سير المكينة","barriers":"","safety_lights":"","notes":""},{"code":"VT19-108","plate_ar":"ب ع د 6804","plate_en":"6804 D E B","chassis":"RS3KHNAJ2P0643663","size":19,"zone":"الجنوب","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-109","plate_ar":"ب ع ب 7369","plate_en":"7369 B E B","chassis":"RS3KHNAJ9P0711053","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-110","plate_ar":"ب ع ب 7400","plate_en":"7400 B E B","chassis":"RS3KHNAJXP0670979","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"محبس تفريغ مكسور","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-111","plate_ar":"ب ع د 6452","plate_en":"6452 D E B","chassis":"RS3KHNAJ1P0670983","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"لوحة المعدة  الامامية مفقودة","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-112","plate_ar":"ب ع د 6459","plate_en":"6459 D E B","chassis":"RS3KHNAJ7P0669739","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"اطار خلفي خارجي يسار\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-113","plate_ar":"ب ع ب 5346","plate_en":"5346 B E B","chassis":"RS3KHNA34P0667561","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-114","plate_ar":"ب ع د 6830","plate_en":"6830 D E B","chassis":"RS3KHNAJ1P0644464","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثر حادث في خزان فصل الزيت الخاص بالمضخة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-115","plate_ar":"ب ع د 6803","plate_en":"6803 D E B","chassis":"RS3KHNAJ4P0643664","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-116","plate_ar":"ب ع د 6968","plate_en":"6968 D E B","chassis":"RS3KHNAJXP0654992","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nغطاء الديزل لا يعمل","barriers":"حاجز خلفي يمين مكسور\nحاجز خلفي يسار مكسور","safety_lights":"","notes":""},{"code":"VT19-117","plate_ar":"ب ع د 6805","plate_en":"6805 D E B","chassis":"RS3KHNAJ2P0642089","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"لوحة المعدة  الامامية مفقودة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يسار مكسور\nجاجز خلفي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-118","plate_ar":"ب ع ب 5345","plate_en":"5345 B E B","chassis":"R53KHNAJ2P0667560","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"حلق (خاتم) تثبيت لي السحب","batteries":"تعمل","tires":"اطار خلفي خارجي يمين\nمقاس 325/95/24","chassis_frame":"موعد صيانة الزيت","barriers":"جاجز امامي يمين مكسور","safety_lights":"","notes":""},{"code":"VT19-119","plate_ar":"ب ع ب 7372","plate_en":"7372 B E B","chassis":"RS3KHNAJ3P0711050","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-120","plate_ar":"ب ع د 6971","plate_en":"6971 D E B","chassis":"RS3KHNAJ5P0669738","size":19,"zone":"أم السلم","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"حلق (خاتم) تثبيت لي السحب","batteries":"لاتعمل","tires":"اطار امامي يمين \nاطار خلفي خارجي يمين مفقود(بريمان)\nمقاس 315/80/22.5","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT19-121","plate_ar":"ب ر و 2060","plate_en":"2060 U R B","chassis":"YV2XSG0D9K0958406","size":19,"zone":"العزيزية","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-122","plate_ar":"ب ر و 2058","plate_en":"2058 U R B","chassis":"‏YV2XSG0D3K0958403","size":19,"zone":"العزيزية","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-123","plate_ar":"ب ر و 2066","plate_en":"2066 U R B","chassis":"‏YV2XSG0D2K0958408","size":19,"zone":"العزيزية","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-124","plate_ar":"ب ر و 2057","plate_en":"2057 U R B","chassis":"‏YV2XSG0D2K0958411","size":19,"zone":"الجامعة","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-125","plate_ar":"ب ر ع 8542","plate_en":"8542 E R B","chassis":"‏YV2XSG0D6K0959187","size":19,"zone":"الجامعة","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-126","plate_ar":"ب ر ع 8441","plate_en":"8441 E R B","chassis":"‏YV2XSG0D4K0958393","size":19,"zone":"الجامعة","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-127","plate_ar":"ب ر ع 8440","plate_en":"8440 E R B","chassis":"‏YV2XSG0D0K0958391","size":19,"zone":"أم السلم","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-128","plate_ar":"ب ر ع 8437","plate_en":"8437 E R B","chassis":"‏YV2XSG0D8K0958400","size":19,"zone":"أم السلم","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-129","plate_ar":"ب ر ع 8540","plate_en":"8540 E R B","chassis":"‏YV2XSG0D6K0958413","size":19,"zone":"أم السلم","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-130","plate_ar":"ب ر ع 8534","plate_en":"8534 E R B","chassis":"‏YV2XSG0D3K0958398","size":19,"zone":"الجنوب","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-131","plate_ar":"ب ر ع 8439","plate_en":"8439 E R B","chassis":"‏YV2XSG0D9K0958390","size":19,"zone":"الجنوب","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT19-132","plate_ar":"ب ر ع 8539","plate_en":"8539 E R B","chassis":"‏YV2XSG0D4K0958412","size":19,"zone":"الجنوب","brand":"","condition":"","pump":"","general_faults":"","batteries":"","tires":"","chassis_frame":"","barriers":"","safety_lights":"","notes":""},{"code":"VT30-001","plate_ar":"ب ع ب 5337","plate_en":"5337 B E B","chassis":"RS3CHPA30P0677973","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"سلف المضخة لا يعمل","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-002","plate_ar":"ب ع ب 5348","plate_en":"5348 B E B","chassis":"PS3CHPAJ9P0683979","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-003","plate_ar":"ب ع ب 5349","plate_en":"5349 B E B","chassis":"RS3CHPAJ7P0684337","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-004","plate_ar":"ب ع ب 5338","plate_en":"5338 B E B","chassis":"RS3CHPA12P0577974","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"تسريب زيت من المضخة","batteries":"لاتعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-005","plate_ar":"ب ع ب 5347","plate_en":"5347 B E B","chassis":"RS3CHPA35P0683980","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثار حادث في درج السلم يمين\nغطاء البطارية مفقود","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nخلل في وحدة التنبؤ بالصيانة","barriers":"","safety_lights":"","notes":""},{"code":"VT30-006","plate_ar":"ب ع ب 5339","plate_en":"5339 B E B","chassis":"RSSCHPA34P0677975","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"اثار حادث في الصدام الامامي يمين","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-007","plate_ar":"ب ع ب 5350","plate_en":"5350 B E B","chassis":"RS3CHPAJ7P0684340","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"غير سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت\nمستوى الزيت مرتفع","barriers":"","safety_lights":"","notes":""},{"code":"VT30-008","plate_ar":"ب ع ب 7358","plate_en":"7358 B E B","chassis":"RS3CHPAJ4P0684344","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-009","plate_ar":"ب ع ب 7368","plate_en":"7368 B E B","chassis":"RS3CHPAJ5P0692517","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"لاتعمل","general_faults":"تسريب لي الديزل الموصل للمضخة","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-010","plate_ar":"ب ع ب 7365","plate_en":"7365 B E B","chassis":"RS3CHPAJ5P0692520","size":30,"zone":"العزيزية","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-011","plate_ar":"ب ع ب 7350","plate_en":"7350 B E B","chassis":"PS3CHPAJ3P0677532","size":30,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-012","plate_ar":"ب ع ب 7349","plate_en":"7349 B E B","chassis":"RS3CHPAJ1P0677531","size":30,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-013","plate_ar":"ب ع ب 7399","plate_en":"7399 B E B","chassis":"RS3CHPAJ3P0693830","size":30,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-014","plate_ar":"ب ع ب 7366","plate_en":"7366 B E B","chassis":"RS3CHPAJ9P0692519","size":30,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""},{"code":"VT30-015","plate_ar":"ب ع ب 7367","plate_en":"7367 B E B","chassis":"RS3CHPAJ7P0692518","size":30,"zone":"الجامعة","brand":"مرسيدس الجفالي","condition":"سليمة","pump":"تعمل","general_faults":"","batteries":"تعمل","tires":"","chassis_frame":"موعد صيانة الزيت","barriers":"","safety_lights":"","notes":""}];
 
 const EQUIPMENT_BY_CODE = {};
 EQUIPMENT.forEach(e => EQUIPMENT_BY_CODE[e.code] = e);
 
+/* ---------- نص خطاب التعهد (موحّد لكل المعدات، ويشمل الفقرة النظامية المشددة) ---------- */
 const PLEDGE_TEXT = `أقرّ أنا الموقّع أدناه بأنني قمت بإجراء الفحص اليومي للمعدة المذكورة بنفسي، بدقة وأمانة، وأن جميع البيانات والإجابات المدخلة في هذا الاستبيان صحيحة ومطابقة للحالة الفعلية للمعدة وقت الفحص، دون حذف أو تجاوز أي بند.
 
 كما أقرّ بأنني أتحمّل المسؤولية الكاملة عن صحة المعلومات المقدّمة، وأنه في حال وجود أي ملاحظة أو عطل تم رصده أثناء الفحص فقد تم توثيقه في هذا الاستبيان بشكل واضح.
 
 وفي حال ثبوت عدم دقة البيانات المرفقة، أو إغفال أي أعطال أو تلفيات موجودة بالفعل، أو إجراء فحص غير دقيق، فإنني أتحمل كامل المسؤولية الفنية والأنظمة المترتبة على ذلك، وأوافق على تطبيق الإجراءات النظامية بحقي، بما فيها توقيع خصم مباشر من الراتب وإصدار إنذار خطي وفق لوائح العمل الداخلية.
 
-بالضغط على "أوافق وأرسل الاستبيان" أدناه فإنني أؤكد قراءتي لما ورد أعلاه وموافقتي عليه.`;
+بالضغط على "أوافق وأبدأ الفحص" أدناه فإنني أؤكد قراءتي لما ورد أعلاه وموافقتي عليه.`;
 
+/* ---------- قالب استبيان صهاريج 19 طن (الأساسي) ---------- */
 const SURVEY_SECTIONS_VT19 = [
   { key: "visual", title: "الفحص البصري لجسم الشاحنة", titleEn: "Visual Inspection for Body Truck", items: [
     { key: "accident", ar: "التحقق ما إذا كان هناك حادث", en: "Check if there is an Accident" },
@@ -228,6 +231,7 @@ const SURVEY_SECTIONS_VT19 = [
   ]}
 ];
 
+/* ---------- أقسام إضافية خاصة باستبيان صهاريج 30 طن (فحص فني تفصيلي) ---------- */
 const SURVEY_SECTIONS_VT30_EXTRA = [
   { key: "pumpunit", title: "فحص وحدة السحب والمضخة والتجهيزات الظاهرية", titleEn: "", items: [
     { key: "hydraulicOil", ar: "مستوى زيت الهيدروليك / زيت المضخة", type: "select", options: ["ممتلئ", "نصف ممتلئ", "فارغ"], issueValues: ["فارغ"] },
@@ -262,30 +266,33 @@ function getSurveyTemplate(size) {
 /* ---------- الحالة العامة ---------- */
 const S = {
   authReady: false, user: null, profile: null, view: "loading", authMode: "login", authError: "", authBusy: false,
-  memberFlow: "info", // info | pick | survey | pledge | done
+
+  memberFlow: "pledge", // pledge | info | pick | survey | done
   pledgeChecked: false,
   techName: "", techId: "", shift: "",
   equipSearch: "", selectedEquip: null,
   answers: {}, generalNotes: "", submitBusy: false,
-  myDone: {},
+
   surveyActive: null,
   surveyTemplate19: null, surveyTemplate30: null,
   equipStatus: {},
+
   adminTab: "alerts",
   pendingUsers: [], allUsers: [], allSubmissions: [],
   filesSelectedUser: null, filesSelectedSub: null,
   adminEquipSearch: "",
   templateEditSize: 19, templateDraft: null,
+
   toast: null,
 };
 
 let unsubUsers = null, unsubPending = null, unsubSettings = null, unsubSubs = null,
-    unsubTemplate19 = null, unsubTemplate30 = null, unsubEquipStatus = null, unsubDone = null;
+    unsubTemplate19 = null, unsubTemplate30 = null, unsubEquipStatus = null;
 
+/* كاميرا مباشرة (خارج دورة الرندر لتفادي قطع البث) */
 let cameraStream = null, cameraPendingKey = null;
 
-function goTop() { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; }
-function setState(patch) { Object.assign(S, patch); render(); if (patch.memberFlow) goTop(); }
+function setState(patch) { Object.assign(S, patch); render(); }
 function showToast(msg) {
   S.toast = msg; render();
   clearTimeout(showToast._t);
@@ -324,7 +331,7 @@ async function handleLogin(email, password) {
 }
 async function handleLogout() {
   await signOut(auth); teardownSubs();
-  setState({ profile: null, view: "auth", memberFlow: "info", selectedEquip: null, answers: {}, pledgeChecked: false, techName: "", techId: "", shift: "", myDone: {} });
+  setState({ profile: null, view: "auth", memberFlow: "pledge", selectedEquip: null, answers: {}, pledgeChecked: false, techName: "", techId: "", shift: "" });
 }
 function friendlyAuthError(err) {
   const code = err && err.code || "";
@@ -339,16 +346,14 @@ function friendlyAuthError(err) {
 
 /* ============================================================ الاشتراكات ============================================================ */
 function teardownSubs() {
-  [unsubUsers, unsubPending, unsubSettings, unsubSubs, unsubTemplate19, unsubTemplate30, unsubEquipStatus, unsubDone].forEach(u => u && u());
-  unsubUsers = unsubPending = unsubSettings = unsubSubs = unsubTemplate19 = unsubTemplate30 = unsubEquipStatus = unsubDone = null;
+  [unsubUsers, unsubPending, unsubSettings, unsubSubs, unsubTemplate19, unsubTemplate30, unsubEquipStatus].forEach(u => u && u());
+  unsubUsers = unsubPending = unsubSettings = unsubSubs = unsubTemplate19 = unsubTemplate30 = unsubEquipStatus = null;
 }
 function subscribeCommon() {
   if (!unsubSettings) unsubSettings = onSnapshot(doc(db, "settings", "survey"), snap => { S.surveyActive = snap.exists() ? !!snap.data().active : false; render(); }, () => {});
   if (!unsubTemplate19) unsubTemplate19 = onSnapshot(doc(db, "settings", "surveyTemplate19"), snap => { S.surveyTemplate19 = (snap.exists() && Array.isArray(snap.data().sections)) ? snap.data().sections : null; render(); }, () => {});
   if (!unsubTemplate30) unsubTemplate30 = onSnapshot(doc(db, "settings", "surveyTemplate30"), snap => { S.surveyTemplate30 = (snap.exists() && Array.isArray(snap.data().sections)) ? snap.data().sections : null; render(); }, () => {});
   if (!unsubEquipStatus) unsubEquipStatus = onSnapshot(collection(db, "equipmentStatus"), snap => { const map = {}; snap.docs.forEach(d => map[d.id] = d.data()); S.equipStatus = map; render(); }, () => {});
-  if (!unsubDone) unsubDone = onSnapshot(query(collection(db, "completions"), where("uid", "==", S.user.uid)),
-    snap => { const m = {}; snap.docs.forEach(d => m[d.data().code] = true); S.myDone = m; render(); }, () => {});
 }
 function subscribeAdminData() {
   if (!unsubPending) unsubPending = onSnapshot(query(collection(db, "users"), where("status", "==", "pending")), snap => { S.pendingUsers = snap.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => {});
@@ -378,7 +383,6 @@ function routeView() {
   if (S.profile.status === "rejected") { S.view = "rejected"; return; }
   if (S.profile.status === "pending") { S.view = "pending"; return; }
   if (S.profile.role === "admin" || S.profile.role === "super_admin") { S.view = "admin"; return; }
-  if (!S.techName) S.techName = S.profile.name || "";
   S.view = "member";
 }
 
@@ -394,84 +398,54 @@ async function rejectUser(u) {
 async function changeRole(u, role) { await updateDoc(doc(db, "users", u.id), { role }); showToast(`تم تحديث صلاحية ${u.name}`); }
 async function toggleSurvey(active) { await setDoc(doc(db, "settings", "survey"), { active, updatedBy: S.profile.email, updatedAt: serverTimestamp() }, { merge: true }); }
 
-async function wipeUserData(uid) {
-  const subs = await getDocs(query(collection(db, "submissions"), where("uid", "==", uid)));
-  for (const d of subs.docs) await deleteDoc(d.ref);
-  const comp = await getDocs(query(collection(db, "completions"), where("uid", "==", uid)));
-  for (const d of comp.docs) await deleteDoc(d.ref);
-  return subs.size;
-}
+/* حذف نهائي لسجل مستخدم (لا يحذف حساب المصادقة نفسه، فقط سجل الصلاحيات — سيعود لوضع "بانتظار الموافقة" لو سجّل دخول مجدداً) */
 async function deleteUserRecord(u) {
   if (!u) return;
   if (u.role === "super_admin") { showToast("لا يمكن حذف حساب المسؤول الأعلى"); return; }
   if (u.id === S.user.uid) { showToast("لا يمكنك حذف حسابك الخاص"); return; }
-  if (!confirm(`سيتم حذف "${u.name}" مع كل استبياناته (ملفه) نهائياً. متأكد؟`)) return;
-  try { await wipeUserData(u.id); await deleteDoc(doc(db, "users", u.id)); showToast(`تم حذف ${u.name} مع ملفه`); }
-  catch (e) { console.error(e); showToast("تعذّر الحذف: " + (e.code || e.message)); }
+  if (!confirm(`هل أنت متأكد من حذف سجل "${u.name}" نهائياً؟ سيحتاج لتسجيل طلب انضمام جديد إذا رجع.`)) return;
+  try { await deleteDoc(doc(db, "users", u.id)); showToast(`تم حذف سجل ${u.name}`); }
+  catch (e) { showToast("تعذّر الحذف، حاول مجدداً"); }
 }
-async function deleteUserFile(u) {
-  if (!u || !confirm(`حذف كل استبيانات "${u.name}" نهائياً (مع بقاء حسابه)؟`)) return;
-  try { const n = await wipeUserData(u.id); setState({ filesSelectedSub: null }); showToast(`تم حذف ${n} استبيان من ملف ${u.name}`); }
-  catch (e) { console.error(e); showToast("تعذّر الحذف: " + (e.code || e.message)); }
-}
+
+/* حذف نهائي لاستبيان */
 async function deleteSubmission(id) {
-  if (!confirm("هل أنت متأكد من حذف هذا الاستبيان نهائياً؟")) return;
+  if (!confirm("هل أنت متأكد من حذف هذا الاستبيان نهائياً؟ لا يمكن التراجع عن هذا الإجراء.")) return;
   try {
-    const sub = S.allSubmissions.find(s => s.id === id);
     await deleteDoc(doc(db, "submissions", id));
-    if (sub) await deleteDoc(doc(db, "completions", `${sub.uid}_${sub.equipmentCode}`));
     if (S.filesSelectedSub === id) S.filesSelectedSub = null;
-    showToast("تم حذف الاستبيان"); render();
-  } catch (e) { console.error(e); showToast("تعذّر الحذف: " + (e.code || e.message)); }
+    showToast("تم حذف الاستبيان");
+    render();
+  } catch (e) { showToast("تعذّر الحذف، حاول مجدداً"); }
 }
 
 async function markReviewed(subId) {
-  try {
-    const sub = S.allSubmissions.find(s => s.id === subId);
-    await updateDoc(doc(db, "submissions", subId), { reviewed: true, reviewedBy: S.profile.email, reviewedAt: serverTimestamp() });
-    if (sub) {
-      const st = S.equipStatus[sub.equipmentCode];
-      if (st && st.lastSubmissionId === subId)
-        await setDoc(doc(db, "equipmentStatus", sub.equipmentCode), { reviewed: true, reviewedBy: S.profile.email, reviewedAt: serverTimestamp() }, { merge: true });
-    }
-    showToast("تم تسجيل مراجعة الاستبيان");
-  } catch (e) { showToast("تعذّر: " + (e.code || e.message)); }
+  await updateDoc(doc(db, "submissions", subId), { reviewed: true, reviewedBy: S.profile.email, reviewedAt: serverTimestamp() });
+  showToast("تم تسجيل مراجعة الاستبيان");
 }
 async function clearMaintenance(code) {
-  await setDoc(doc(db, "equipmentStatus", code), { level: "ok", issueCount: 0, issues: "", reviewed: true, clearedBy: S.profile.email, clearedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "equipmentStatus", code), { level: "ok", issueCount: 0, clearedBy: S.profile.email, clearedAt: serverTimestamp() }, { merge: true });
   showToast(`تم تصفير حالة المعدة ${code} بعد الصيانة`);
 }
-async function reopenForTech(subId) {
-  const sub = S.allSubmissions.find(s => s.id === subId); if (!sub) return;
-  try { await deleteDoc(doc(db, "completions", `${sub.uid}_${sub.equipmentCode}`)); showToast("تمت إعادة فتح المعدة للفني"); }
-  catch (e) { showToast("تعذّر: " + (e.code || e.message)); }
-}
-async function reopenAll() {
-  if (!confirm("فتح كل المعدات لجميع الفنيين من جديد؟")) return;
-  try { const snap = await getDocs(collection(db, "completions")); for (const d of snap.docs) await deleteDoc(d.ref); showToast("تم فتح جميع المعدات للجميع"); }
-  catch (e) { showToast("تعذّر: " + (e.code || e.message)); }
-}
 function exportEquipmentExcel() {
-  const fmt = t => t && t.toDate ? t.toDate().toLocaleString("ar-SA") : "";
   const rows = EQUIPMENT.map(e => {
     const st = S.equipStatus[e.code] || {};
     const levelAr = st.level === "critical" ? "حرجة 🔴" : st.level === "warning" ? "تحتاج متابعة 🟠" : st.level === "ok" ? "سليمة 🟢" : "لم يتم الفحص بعد";
     return {
       "كود المعدة": e.code, "رقم اللوحة": e.plate_ar, "الحجم": e.size + " طن", "البلدية": e.zone || "",
-      "حالة الفحص": levelAr, "عدد الملاحظات": st.issueCount ?? "",
-      "تفاصيل الملاحظات": st.issues || "", "ملاحظات عامة": st.generalNotes || "",
-      "الفني": st.lastSubmittedByTech || st.lastSubmittedBy || "", "رقم الهوية": st.techId || "", "الشفت": st.shift || "",
-      "تدقيق المسؤول": st.reviewed ? "تمت المراجعة" : (st.lastSubmissionId ? "بانتظار المراجعة" : ""),
-      "المراجع": st.reviewedBy || "", "آخر تحديث": fmt(st.updatedAt),
+      "حالة الفحص": levelAr, "عدد الملاحظات في آخر فحص": st.issueCount ?? "",
+      "الفني الذي فحصها": st.lastSubmittedByTech || st.lastSubmittedBy || "",
+      "آخر تحديث": st.updatedAt && st.updatedAt.toDate ? st.updatedAt.toDate().toLocaleString("ar-SA") : "",
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 60 }, { wch: 30 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 26 }, { wch: 20 }];
+  ws["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 20 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "حالة الصهاريج");
   XLSX.writeFile(wb, `حالة_الصهاريج_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
+/* محرر أسئلة الاستبيان (منفصل لكل حجم) */
 function ensureTemplateDraft() {
   if (!S.templateDraft) {
     const cur = S.templateEditSize === 30 ? S.surveyTemplate30 : S.surveyTemplate19;
@@ -488,17 +462,13 @@ async function saveTemplate() {
 }
 
 /* ============================================================ تدفّق العضو ============================================================ */
-function infoComplete() { return S.techName.trim() && /^\d{11}$/.test(S.techId) && S.shift; }
-function updateInfoBtn() { const b = document.getElementById("confirmInfoBtn"); if (b) b.disabled = !infoComplete(); }
-function toEnDigits(s) { return s.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)); }
-
 function resetMemberFlow() {
-  setState({ memberFlow: infoComplete() ? "pick" : "info", pledgeChecked: false, selectedEquip: null, answers: {}, generalNotes: "", equipSearch: "" });
+  setState({ memberFlow: "pledge", pledgeChecked: false, techName: S.profile ? S.profile.name : "", techId: "", shift: "", selectedEquip: null, answers: {}, generalNotes: "", equipSearch: "" });
 }
 function pickEquipment(eq) {
   const answers = {};
   getSurveyTemplate(eq.size).forEach(sec => sec.items.forEach(it => { answers[it.key] = { status: "", remark: "", photoUrl: "" }; }));
-  setState({ selectedEquip: eq, answers, pledgeChecked: false, memberFlow: "survey" });
+  setState({ selectedEquip: eq, answers, memberFlow: "survey" });
 }
 function setAnswerStatus(key, status) { S.answers[key] = { ...(S.answers[key] || {}), status }; render(); }
 function setAnswerRemark(key, remark) { S.answers[key] = { ...(S.answers[key] || {}), remark }; }
@@ -519,6 +489,7 @@ async function attachPhotoBlob(key, blob) {
 }
 function removePhoto(key) { S.answers[key] = { ...(S.answers[key] || {}), photoUrl: "" }; render(); }
 
+/* ---- كاميرا مباشرة فقط (بدون إمكانية اختيار صورة من المعرض) ---- */
 function ensureCameraModal() {
   if (document.getElementById("cameraModalOverlay")) return;
   const div = document.createElement("div");
@@ -529,7 +500,8 @@ function ensureCameraModal() {
       <button id="cameraShotBtn" type="button">📷</button>
       <button id="cameraCancelBtn" type="button">إلغاء</button>
     </div>
-    <p class="camera-hint">تصوير مباشر فقط — لا يمكن اختيار صورة من المعرض</p>`;
+    <p class="camera-hint">تصوير مباشر فقط — لا يمكن اختيار صورة من المعرض</p>
+  `;
   document.body.appendChild(div);
   document.getElementById("cameraShotBtn").addEventListener("click", capturePhotoNow);
   document.getElementById("cameraCancelBtn").addEventListener("click", closeCameraModal);
@@ -537,11 +509,15 @@ function ensureCameraModal() {
 async function openCameraModal(key) {
   ensureCameraModal();
   cameraPendingKey = key;
-  document.getElementById("cameraModalOverlay").style.display = "flex";
+  const overlay = document.getElementById("cameraModalOverlay");
+  overlay.style.display = "flex";
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
     document.getElementById("cameraVideoEl").srcObject = cameraStream;
-  } catch (e) { showToast("تعذّر الوصول إلى الكاميرا، تحقق من الأذونات"); closeCameraModal(); }
+  } catch (e) {
+    showToast("تعذّر الوصول إلى الكاميرا، تحقق من الأذونات");
+    closeCameraModal();
+  }
 }
 function closeCameraModal() {
   const overlay = document.getElementById("cameraModalOverlay");
@@ -559,6 +535,7 @@ function capturePhotoNow() {
   canvas.toBlob((blob) => { closeCameraModal(); if (blob) attachPhotoBlob(key, blob); }, "image/jpeg", 0.85);
 }
 
+/* شدّة الأعطال بناءً على issueValues لعناصر select، وعلى status لعناصر سليم/ملاحظة */
 function computeSeverity(template, answers) {
   let issueCount = 0;
   template.forEach(sec => sec.items.forEach(it => {
@@ -575,22 +552,12 @@ function isSurveyComplete(template, answers) {
   for (const sec of template) for (const it of sec.items) { const a = answers[it.key]; if (!a || !a.status) return false; }
   return true;
 }
-function buildIssuesText(template, answers) {
-  const out = [];
-  template.forEach(sec => sec.items.forEach(it => {
-    const a = answers[it.key]; if (!a) return;
-    const bad = it.type === "select" ? (it.issueValues || []).includes(a.status) : a.status === "issue";
-    if (bad) out.push(`${it.ar}: ${it.type === "select" ? a.status : (a.remark || "ملاحظة")}`);
-  }));
-  return out.join(" | ");
-}
 
 async function submitSurvey() {
   if (S.submitBusy) return;
   const eq = S.selectedEquip;
   const template = getSurveyTemplate(eq.size);
-  if (!isSurveyComplete(template, S.answers)) { showToast("الرجاء الإجابة على جميع الأسئلة"); return; }
-  if (!S.pledgeChecked) { showToast("يجب الموافقة على التعهد"); return; }
+  if (!isSurveyComplete(template, S.answers)) { showToast("الرجاء الإجابة على جميع أسئلة الاستبيان قبل الإرسال"); return; }
   setState({ submitBusy: true });
   try {
     const { level, issueCount } = computeSeverity(template, S.answers);
@@ -603,13 +570,11 @@ async function submitSurvey() {
     });
     await setDoc(doc(db, "equipmentStatus", eq.code), {
       level, issueCount, plate: eq.plate_ar, zone: eq.zone || "", size: eq.size,
-      issues: buildIssuesText(template, S.answers), generalNotes: S.generalNotes || "",
       lastSubmissionId: subRef.id, lastSubmittedBy: S.profile.name, lastSubmittedByTech: S.techName,
-      techId: S.techId, shift: S.shift, reviewed: false, reviewedBy: "", updatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     }, { merge: true });
-    await setDoc(doc(db, "completions", `${S.user.uid}_${eq.code}`), { uid: S.user.uid, code: eq.code, submissionId: subRef.id, createdAt: serverTimestamp() });
     setState({ memberFlow: "done", submitBusy: false });
-  } catch (e) { console.error(e); setState({ submitBusy: false }); showToast("تعذّر الإرسال: " + (e.code || e.message)); }
+  } catch (e) { setState({ submitBusy: false }); showToast("تعذّر إرسال الاستبيان، تحقق من الاتصال وحاول مجدداً"); }
 }
 
 /* ============================================================ العرض ============================================================ */
@@ -657,55 +622,54 @@ function renderRejectedScreen() { return `<div class="center-screen"><div style=
 /* ---------- شاشات العضو ---------- */
 function renderMember() {
   if (!S.surveyActive) return `<div class="wrap"><div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:440px"><div class="big">📋</div><h2>لا يوجد استبيان حالياً</h2><p class="lead">لم يقم المسؤول بتفعيل الاستبيان بعد. الرجاء المحاولة لاحقاً.</p></div></div></div>`;
+  if (S.memberFlow === "pledge") return `<div class="wrap">${renderPledge()}</div>`;
   if (S.memberFlow === "info") return `<div class="wrap">${renderInfoStep()}</div>`;
   if (S.memberFlow === "pick") return `<div class="wrap">${renderEquipPick()}</div>`;
-  if (S.memberFlow === "survey" && S.selectedEquip) return `<div class="wrap">${renderSurveyForm()}</div>`;
-  if (S.memberFlow === "pledge" && S.selectedEquip) return `<div class="wrap">${renderPledge()}</div>`;
+  if (S.memberFlow === "survey") return `<div class="wrap">${renderSurveyForm()}</div>`;
   if (S.memberFlow === "done") return `<div class="wrap">${renderDone()}</div>`;
   return "";
 }
 function renderPledge() {
   return `<div class="card" style="max-width:640px;margin:0 auto">
     <h1>خطاب تعهد</h1>
-    <p class="lead">آخر خطوة: اقرأ الإقرار ووافق عليه ليتم إرسال الاستبيان</p>
+    <p class="lead">الرجاء قراءة الإقرار التالي بعناية قبل بدء الفحص</p>
     <div class="pledge-box">${esc(PLEDGE_TEXT).replace(/\n/g, "<br>")}</div>
     <label class="checkline"><input type="checkbox" id="pledgeChk" ${S.pledgeChecked ? "checked" : ""}><span>لقد قرأت الإقرار أعلاه وأوافق على جميع ما ورد فيه</span></label>
-    <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn outline" data-act="backToSurvey">رجوع للاستبيان</button>
-      <button class="btn" style="flex:1" data-act="submitSurvey" ${S.pledgeChecked && !S.submitBusy ? "" : "disabled"}>${S.submitBusy ? "جارِ الإرسال…" : "أوافق وأرسل الاستبيان"}</button>
-    </div>
+    <div style="margin-top:20px"><button class="btn block" data-act="acceptPledge" ${S.pledgeChecked ? "" : "disabled"}>أوافق وأبدأ الفحص</button></div>
   </div>`;
 }
 function renderInfoStep() {
+  const complete = S.techName.trim() && S.techId.trim() && S.shift;
   return `<div class="card" style="max-width:560px;margin:0 auto">
     <h1>بيانات الفني</h1>
-    <p class="lead">هذه البيانات تُحفظ مع الاستبيان لتوثيق من قام بالفحص فعلياً.</p>
+    <p class="lead">هذه البيانات تُحفظ مع الاستبيان لتوثيق من قام بالفحص فعلياً بشكل واضح.</p>
     <div class="field"><label class="field-label">اسم الفني</label><input type="text" id="techNameInput" value="${esc(S.techName)}" placeholder="اسم الفني الكامل"></div>
-    <div class="field"><label class="field-label">رقم الهوية (11 رقم)</label><input type="text" id="techIdInput" inputmode="numeric" maxlength="11" value="${esc(S.techId)}" placeholder="11 رقم"></div>
+    <div class="field"><label class="field-label">رقم الهوية</label><input type="text" id="techIdInput" value="${esc(S.techId)}" placeholder="رقم الهوية / الإقامة"></div>
     <div class="field"><label class="field-label">الشفت</label>
       <div class="shift-grid">
         <div class="shift-btn ${S.shift === "صباحي" ? "sel" : ""}" data-act="pickShift" data-shift="صباحي">☀️ صباحي</div>
         <div class="shift-btn ${S.shift === "مسائي" ? "sel" : ""}" data-act="pickShift" data-shift="مسائي">🌤️ مسائي</div>
         <div class="shift-btn ${S.shift === "ليلي" ? "sel" : ""}" data-act="pickShift" data-shift="ليلي">🌙 ليلي</div>
-      </div></div>
-    <div style="margin-top:20px"><button class="btn block" id="confirmInfoBtn" data-act="confirmInfo" ${infoComplete() ? "" : "disabled"}>التالي — اختيار المعدة</button></div>
+      </div>
+    </div>
+    <div style="margin-top:20px"><button class="btn block" data-act="confirmInfo" ${complete ? "" : "disabled"}>التالي — اختيار المعدة</button></div>
   </div>`;
-}
-function normalizeSearch(s) { return String(s || "").toLowerCase().replace(/[\s\-–_]/g, ""); }
-function searchEquipMember(q) {
-  const nq = normalizeSearch(q);
-  return EQUIPMENT.filter(e => !S.myDone[e.code] && [e.code, e.plate_ar, e.plate_en, e.chassis, e.zone].some(v => normalizeSearch(v).includes(nq)));
 }
 function renderEquipPick() {
   const q = S.equipSearch.trim();
-  const results = q.length >= 1 ? searchEquipMember(q) : [];
+  let results = [];
+  if (q.length >= 1) {
+    const nq = normalizeSearch(q);
+    results = EQUIPMENT.filter(e => normalizeSearch(e.code).includes(nq) || normalizeSearch(e.plate_ar).includes(nq) || normalizeSearch(e.plate_en).includes(nq) || normalizeSearch(e.chassis).includes(nq) || normalizeSearch(e.zone).includes(nq));
+  }
   return `<div class="card">
     <h1>اختر المعدة</h1>
-    <p class="lead">ابحث برقم المعدة (مثل VT19-029 أو VT30-005) أو رقم اللوحة أو رقم الهيكل أو البلدية. المعدات التي أنهيت فحصها لا تظهر هنا.</p>
+    <p class="lead">ابحث برقم المعدة (مثل VT19-029 أو VT30-005) أو رقم اللوحة أو رقم الهيكل أو البلدية. النقطة الملوّنة والإطار الوامض يوضحان حالة المعدة الحالية.</p>
     <div class="searchbar"><input type="text" id="equipSearchInput" placeholder="VT19-029 …" value="${esc(S.equipSearch)}" autofocus><span class="ic">🔍</span></div>
-    <div id="equipResults">${q.length < 1 ? `<p class="muted">ابدأ الكتابة لعرض النتائج…</p>` : results.length === 0 ? `<div class="empty"><div class="big">🔎</div><p>لا توجد نتائج (أو تم إنجاز الفحص لها)</p></div>` : results.map(equipCardHtml).join("")}</div>
+    <div id="equipResults">${q.length < 1 ? `<p class="muted">ابدأ الكتابة لعرض النتائج…</p>` : results.length === 0 ? `<div class="empty"><div class="big">🔎</div><p>لا توجد نتائج مطابقة</p></div>` : results.map(equipCardHtml).join("")}</div>
   </div>`;
 }
+function normalizeSearch(s) { return String(s || "").toLowerCase().replace(/[\s\-–_]/g, ""); }
 function equipStatusClass(code) { const st = S.equipStatus[code]; if (!st || !st.level || st.level === "ok") return ""; return "status-" + st.level; }
 function equipStatusDot(code) { const st = S.equipStatus[code]; const level = (st && st.level) ? st.level : "ok"; return `<span class="status-dot ${level}"></span>`; }
 function equipCardHtml(e) {
@@ -734,8 +698,8 @@ function renderSurveyForm() {
   <div class="card">
     <label class="field-label">ملاحظات عامة إضافية (تفاصيل بشأن الإصلاح والصيانة المطلوبة)</label>
     <textarea id="generalNotes" placeholder="اكتب أي تفاصيل إضافية هنا (اختياري)…">${esc(S.generalNotes)}</textarea>
-    ${!complete ? `<div class="msg info" style="margin-top:14px">لا يمكن المتابعة قبل الإجابة على جميع الأسئلة أعلاه.</div>` : ""}
-    <div style="margin-top:18px"><button class="btn block" data-act="toPledge" ${complete ? "" : "disabled"}>${complete ? "التالي — خطاب التعهد" : "أكمل جميع الأسئلة أولاً"}</button></div>
+    ${!complete ? `<div class="msg info" style="margin-top:14px">لا يمكن إرسال الاستبيان قبل الإجابة على جميع الأسئلة أعلاه.</div>` : ""}
+    <div style="margin-top:18px"><button class="btn block" data-act="submitSurvey" ${S.submitBusy || !complete ? "disabled" : ""}>${S.submitBusy ? "جارِ الإرسال…" : (complete ? "إرسال الاستبيان" : "أكمل جميع الأسئلة أولاً")}</button></div>
   </div>`;
 }
 function renderQuestionRow(it) {
@@ -757,7 +721,7 @@ function photoRowHtml(key, ans) {
 function renderDone() {
   return `<div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:460px">
     <div class="big">✅</div><h2>تم إرسال الاستبيان بنجاح</h2>
-    <p class="lead">تم حفظ استبيان المعدة ${esc(S.selectedEquip ? S.selectedEquip.code : "")} في ملفك الخاص باسم الفني "${esc(S.techName)}"، وسيصل تنبيه بذلك للمسؤولين لمراجعته.</p>
+    <p class="lead">تم حفظ استبيان المعدة ${esc(S.selectedEquip.code)} في ملفك الخاص باسم الفني "${esc(S.techName)}"، وسيصل تنبيه بذلك للمسؤولين لمراجعته.</p>
     <button class="btn" data-act="newSurvey">تعبئة استبيان جديد</button>
   </div></div>`;
 }
@@ -776,7 +740,7 @@ function renderAdminAlerts() {
   return `<div class="card"><p class="lead">استبيانات وصلت ولم تتم مراجعتها بعد. تبقى محفوظة دائماً في ملف الفني الذي عبّأها بنفسه.</p>
     ${items.map(s => `<div class="list-row"><div class="main"><div class="t1">${esc(s.equipmentCode)} — ${esc(s.plate || "")} <span class="tag ${s.issueLevel === "critical" ? "issue" : s.issueLevel === "warning" ? "pending" : "ok"}">${s.issueLevel === "critical" ? "حرجة" : s.issueLevel === "warning" ? "تحتاج متابعة" : "سليمة"}</span></div>
       <div class="t2">مقدّم من الفني: ${esc(s.technicianName || s.userName)} · حساب: ${esc(s.userName)} · ${fmtDate(s.createdAt)}</div></div>
-      <div class="acts"><button class="btn outline sm" data-act="viewSub" data-id="${s.id}">عرض التفاصيل</button><button class="btn sm" data-act="markReviewed" data-id="${s.id}">تمت المراجعة ✔️</button><button class="btn outline sm" data-act="reopenTech" data-id="${s.id}">إعادة فتح للفني ↺</button><button class="btn danger sm" data-act="deleteSub" data-id="${s.id}">حذف 🗑</button></div></div>`).join("")}
+      <div class="acts"><button class="btn outline sm" data-act="viewSub" data-id="${s.id}">عرض التفاصيل</button><button class="btn sm" data-act="markReviewed" data-id="${s.id}">تمت المراجعة ✔️</button><button class="btn danger sm" data-act="deleteSub" data-id="${s.id}">حذف 🗑</button></div></div>`).join("")}
   </div>`;
 }
 function renderAdminPending() {
@@ -808,8 +772,8 @@ function renderAdminFiles() {
     </div>`;
   }
   const usersWithCounts = S.allUsers.filter(u => u.status === "approved").map(u => ({ ...u, count: S.allSubmissions.filter(s => s.uid === u.id).length }));
-  return `<div class="card"><p class="lead" style="margin-bottom:14px">ملفات الموظفين — كل استبيان محفوظ دائماً في ملف الحساب الذي سجّله، وهذه الصفحة مخصصة للمسؤولين فقط.</p>
-    ${usersWithCounts.map(u => `<div class="list-row"><div class="main"><div class="t1">📁 ${esc(u.name)}</div><div class="t2">${esc(u.email)} · ${u.count} استبيان</div></div><div class="acts"><button class="btn outline sm" data-act="openUserFile" data-id="${u.id}">فتح الملف</button><button class="btn danger sm" data-act="deleteUserFile" data-id="${u.id}">حذف الملف 🗑</button></div></div>`).join("")}
+  return `<div class="card"><p class="lead" style="margin-bottom:14px">ملفات الموظفين — كل استبيان محفوظ دائماً في ملف الحساب الذي سجّله (أي الفني الذي عبّأه فعلياً)، ولا يمكن لأي عضو الاطلاع على ملفه الخاص؛ هذه الصفحة مخصصة للمسؤولين فقط.</p>
+    ${usersWithCounts.map(u => `<div class="list-row"><div class="main"><div class="t1">📁 ${esc(u.name)}</div><div class="t2">${esc(u.email)} · ${u.count} استبيان</div></div><div class="acts"><button class="btn outline sm" data-act="openUserFile" data-id="${u.id}">فتح الملف</button></div></div>`).join("")}
   </div>`;
 }
 function submissionDetailHtml(sub) {
@@ -820,7 +784,6 @@ function submissionDetailHtml(sub) {
   ${sub.reviewed ? ` · تمت المراجعة بواسطة ${esc(sub.reviewedBy || "")}` : ` · <b style="color:var(--amber)">لم تتم المراجعة بعد</b>`}</p>
   <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     ${!sub.reviewed ? `<button class="btn sm" data-act="markReviewed" data-id="${sub.id}">تمت المراجعة ✔️</button>` : ""}
-    <button class="btn outline sm" data-act="reopenTech" data-id="${sub.id}">إعادة فتح للفني ↺</button>
     <button class="btn danger sm" data-act="deleteSub" data-id="${sub.id}">حذف هذا الاستبيان 🗑</button>
   </div>
   <div class="divider"></div>
@@ -839,7 +802,7 @@ function renderAdminEquipment() {
   const warnCount = Object.values(S.equipStatus).filter(s => s.level === "warning").length;
   const critCount = Object.values(S.equipStatus).filter(s => s.level === "critical").length;
   return `<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px"><h2 style="margin:0">دليل المعدات (${EQUIPMENT.length} معدة كاملة)</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline sm" data-act="reopenAll">🔓 فتح كل المعدات للجميع</button><button class="btn gold sm" data-act="exportEquipExcel">⬇️ تصدير حالة الصهاريج (Excel)</button></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px"><h2 style="margin:0">دليل المعدات (${EQUIPMENT.length} معدة كاملة)</h2><button class="btn gold sm" data-act="exportEquipExcel">⬇️ تصدير حالة الصهاريج (Excel)</button></div>
     <div class="kpi-grid"><div class="kpi"><div class="n">${EQUIPMENT.length}</div><div class="l">إجمالي المعدات</div></div><div class="kpi"><div class="n">${EQUIPMENT.filter(e => e.size === 19).length}</div><div class="l">19 طن</div></div><div class="kpi"><div class="n">${EQUIPMENT.filter(e => e.size === 30).length}</div><div class="l">30 طن</div></div><div class="kpi"><div class="n" style="color:var(--amber)">${warnCount}</div><div class="l">🟠 تحتاج متابعة</div></div><div class="kpi"><div class="n" style="color:var(--red)">${critCount}</div><div class="l">🔴 حالة حرجة</div></div></div>
     <div class="searchbar"><input type="text" id="adminEquipSearchInput" placeholder="ابحث بالكود أو اللوحة أو البلدية… (اتركه فارغاً لعرض الكل)" value="${esc(S.adminEquipSearch)}"><span class="ic">🔍</span></div>
     <div id="adminEquipResults">${results.map(e => `<div class="equip-card ${equipStatusClass(e.code)}" data-act="viewEquipDetail" data-code="${esc(e.code)}" style="margin-bottom:8px">${equipDetailToggleHtml(e)}</div>`).join("")}</div>
@@ -902,19 +865,17 @@ function bindEvents() {
     let html;
     if (q.length < 1) html = `<p class="muted">ابدأ الكتابة لعرض النتائج…</p>`;
     else {
-      const results = searchEquipMember(q);
-      html = results.length === 0 ? `<div class="empty"><div class="big">🔎</div><p>لا توجد نتائج (أو تم إنجاز الفحص لها)</p></div>` : results.map(equipCardHtml).join("");
+      const nq = normalizeSearch(q);
+      const results = EQUIPMENT.filter(x => normalizeSearch(x.code).includes(nq) || normalizeSearch(x.plate_ar).includes(nq) || normalizeSearch(x.plate_en).includes(nq) || normalizeSearch(x.chassis).includes(nq) || normalizeSearch(x.zone).includes(nq));
+      html = results.length === 0 ? `<div class="empty"><div class="big">🔎</div><p>لا توجد نتائج مطابقة</p></div>` : results.map(equipCardHtml).join("");
     }
     wrap.innerHTML = html; bindDynamicClicks(wrap);
   });
 
   const techNameInput = document.getElementById("techNameInput");
-  if (techNameInput) techNameInput.addEventListener("input", (e) => { S.techName = e.target.value; updateInfoBtn(); });
+  if (techNameInput) techNameInput.addEventListener("input", (e) => { S.techName = e.target.value; render(); });
   const techIdInput = document.getElementById("techIdInput");
-  if (techIdInput) techIdInput.addEventListener("input", (e) => {
-    const v = toEnDigits(e.target.value).replace(/\D/g, "").slice(0, 11);
-    e.target.value = v; S.techId = v; updateInfoBtn();
-  });
+  if (techIdInput) techIdInput.addEventListener("input", (e) => { S.techId = e.target.value; render(); });
 
   const adminEquipInput = document.getElementById("adminEquipSearchInput");
   if (adminEquipInput) { adminEquipInput.addEventListener("input", (e) => { S.adminEquipSearch = e.target.value; render(); }); adminEquipInput.focus(); adminEquipInput.selectionStart = adminEquipInput.selectionEnd = adminEquipInput.value.length; }
@@ -958,12 +919,11 @@ function bindDynamicClicks(root) {
         if (email) sendPasswordResetEmail(auth, email.trim()).then(() => showToast("تم إرسال رابط إعادة التعيين إلى بريدك")).catch(() => showToast("تعذّر إرسال الرابط، تحقق من البريد"));
         return;
       }
+      if (act === "acceptPledge") return setState({ memberFlow: "info", techName: S.techName || (S.profile ? S.profile.name : "") });
       if (act === "pickShift") return setState({ shift: el.dataset.shift });
-      if (act === "confirmInfo") { if (!infoComplete()) return; return setState({ memberFlow: "pick" }); }
+      if (act === "confirmInfo") { if (!(S.techName.trim() && S.techId.trim() && S.shift)) return; return setState({ memberFlow: "pick" }); }
       if (act === "pickEquip") { const eq = EQUIPMENT_BY_CODE[el.dataset.code]; if (eq) pickEquipment(eq); return; }
       if (act === "changeEquip") return setState({ memberFlow: "pick", selectedEquip: null });
-      if (act === "toPledge") { if (isSurveyComplete(getSurveyTemplate(S.selectedEquip.size), S.answers)) setState({ memberFlow: "pledge" }); return; }
-      if (act === "backToSurvey") return setState({ memberFlow: "survey" });
       if (act === "removePhoto") return removePhoto(el.dataset.key);
       if (act === "openCamera") return openCameraModal(el.dataset.key);
       if (act === "submitSurvey") return submitSurvey();
@@ -973,15 +933,12 @@ function bindDynamicClicks(root) {
       if (act === "approve") { const u = S.pendingUsers.find(x => x.id === el.dataset.id); if (u) approveUser(u, el.dataset.role); return; }
       if (act === "reject") { const u = S.pendingUsers.find(x => x.id === el.dataset.id); if (u && confirm(`هل أنت متأكد من رفض طلب ${u.name}؟`)) rejectUser(u); return; }
       if (act === "deleteUser") { const u = (S.pendingUsers.find(x => x.id === el.dataset.id)) || (S.allUsers.find(x => x.id === el.dataset.id)); if (u) deleteUserRecord(u); return; }
-      if (act === "deleteUserFile") return deleteUserFile(S.allUsers.find(x => x.id === el.dataset.id));
       if (act === "openUserFile") return setState({ filesSelectedUser: el.dataset.id, filesSelectedSub: null });
       if (act === "backToFilesList") return setState({ filesSelectedUser: null, filesSelectedSub: null });
       if (act === "backToUserFile") return setState({ filesSelectedSub: null });
       if (act === "viewSub") { const sub = S.allSubmissions.find(s => s.id === el.dataset.id); return setState({ adminTab: "files", filesSelectedUser: sub ? sub.uid : S.filesSelectedUser, filesSelectedSub: el.dataset.id }); }
       if (act === "markReviewed") return markReviewed(el.dataset.id);
       if (act === "deleteSub") return deleteSubmission(el.dataset.id);
-      if (act === "reopenTech") return reopenForTech(el.dataset.id);
-      if (act === "reopenAll") return reopenAll();
       if (act === "viewEquipDetail") { S._openEquip = S._openEquip === el.dataset.code ? null : el.dataset.code; return render(); }
       if (act === "clearMaintenance") return clearMaintenance(el.dataset.code);
       if (act === "exportEquipExcel") return exportEquipmentExcel();
