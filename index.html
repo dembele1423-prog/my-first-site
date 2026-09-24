@@ -147,6 +147,7 @@ a{color:var(--navy-2)}
 #cameraShotBtn{background:#fff;color:#0f2a43;border:none;border-radius:50%;width:66px;height:66px;font-size:26px;cursor:pointer}
 #cameraCancelBtn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:20px;padding:10px 20px;cursor:pointer;font-family:inherit;font-size:13.5px;}
 .camera-hint{color:#cfd7de;font-size:12.5px;margin-top:10px;text-align:center}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,42,67,.55);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;}
 </style>
 </head>
 <body>
@@ -161,7 +162,7 @@ import {
   onAuthStateChanged, signOut, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection,
+  getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection,
   query, where, orderBy, onSnapshot, serverTimestamp, limit as qlimit
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
@@ -201,7 +202,7 @@ const PLEDGE_TEXT = `أقرّ أنا الموقّع أدناه بأنني قمت
 
 وفي حال ثبوت عدم دقة البيانات المرفقة، أو إغفال أي أعطال أو تلفيات موجودة بالفعل، أو إجراء فحص غير دقيق، فإنني أتحمل كامل المسؤولية الفنية والأنظمة المترتبة على ذلك، وأوافق على تطبيق الإجراءات النظامية بحقي، بما فيها توقيع خصم مباشر من الراتب وإصدار إنذار خطي وفق لوائح العمل الداخلية.
 
-بالضغط على "أوافق وأبدأ الفحص" أدناه فإنني أؤكد قراءتي لما ورد أعلاه وموافقتي عليه.`;
+بالضغط على "أوافق وأرسل الاستبيان النهائي" أدناه فإنني أؤكد قراءتي لما ورد أعلاه وموافقتي عليه.`;
 
 /* ---------- قالب استبيان صهاريج 19 طن (الأساسي) ---------- */
 const SURVEY_SECTIONS_VT19 = [
@@ -267,13 +268,13 @@ function getSurveyTemplate(size) {
 const S = {
   authReady: false, user: null, profile: null, view: "loading", authMode: "login", authError: "", authBusy: false,
 
-  memberFlow: "pledge", // pledge | info | pick | survey | done
+  memberFlow: "info", // info | pick | survey | pledge
   pledgeChecked: false,
   techName: "", techId: "", shift: "",
   equipSearch: "", selectedEquip: null,
   answers: {}, generalNotes: "", submitBusy: false,
 
-  surveyActive: null,
+  surveyActive: null, surveyCycleId: 0, myStatus: null,
   surveyTemplate19: null, surveyTemplate30: null,
   equipStatus: {},
 
@@ -284,13 +285,27 @@ const S = {
   templateEditSize: 19, templateDraft: null,
 
   toast: null,
+  modal: null,
 };
 
 let unsubUsers = null, unsubPending = null, unsubSettings = null, unsubSubs = null,
-    unsubTemplate19 = null, unsubTemplate30 = null, unsubEquipStatus = null;
+    unsubTemplate19 = null, unsubTemplate30 = null, unsubEquipStatus = null, unsubMyStatus = null;
 
 /* كاميرا مباشرة (خارج دورة الرندر لتفادي قطع البث) */
 let cameraStream = null, cameraPendingKey = null;
+
+/* مودال تأكيد/إدخال بديل عن confirm()/prompt() الأصليين (لا يعملان داخل بيئة الاستضافة المحصّنة) */
+let modalCallback = null;
+function openConfirm(message, onYes) { modalCallback = onYes; setState({ modal: { type: "confirm", message } }); }
+function openPrompt(message, placeholder, onSubmit) { modalCallback = onSubmit; setState({ modal: { type: "prompt", message, placeholder: placeholder || "" } }); }
+function closeModal() { modalCallback = null; setState({ modal: null }); }
+function runModalConfirm() {
+  const cb = modalCallback;
+  let val;
+  if (S.modal && S.modal.type === "prompt") { const inp = document.getElementById("modalPromptInput"); val = inp ? inp.value : ""; }
+  closeModal();
+  if (cb) cb(val);
+}
 
 function setState(patch) { Object.assign(S, patch); render(); }
 function showToast(msg) {
@@ -331,7 +346,7 @@ async function handleLogin(email, password) {
 }
 async function handleLogout() {
   await signOut(auth); teardownSubs();
-  setState({ profile: null, view: "auth", memberFlow: "pledge", selectedEquip: null, answers: {}, pledgeChecked: false, techName: "", techId: "", shift: "" });
+  setState({ profile: null, view: "auth", memberFlow: "info", selectedEquip: null, answers: {}, pledgeChecked: false, techName: "", techId: "", shift: "", myStatus: null });
 }
 function friendlyAuthError(err) {
   const code = err && err.code || "";
@@ -346,14 +361,21 @@ function friendlyAuthError(err) {
 
 /* ============================================================ الاشتراكات ============================================================ */
 function teardownSubs() {
-  [unsubUsers, unsubPending, unsubSettings, unsubSubs, unsubTemplate19, unsubTemplate30, unsubEquipStatus].forEach(u => u && u());
-  unsubUsers = unsubPending = unsubSettings = unsubSubs = unsubTemplate19 = unsubTemplate30 = unsubEquipStatus = null;
+  [unsubUsers, unsubPending, unsubSettings, unsubSubs, unsubTemplate19, unsubTemplate30, unsubEquipStatus, unsubMyStatus].forEach(u => u && u());
+  unsubUsers = unsubPending = unsubSettings = unsubSubs = unsubTemplate19 = unsubTemplate30 = unsubEquipStatus = unsubMyStatus = null;
 }
 function subscribeCommon() {
-  if (!unsubSettings) unsubSettings = onSnapshot(doc(db, "settings", "survey"), snap => { S.surveyActive = snap.exists() ? !!snap.data().active : false; render(); }, () => {});
+  if (!unsubSettings) unsubSettings = onSnapshot(doc(db, "settings", "survey"), snap => {
+    const d = snap.exists() ? snap.data() : {};
+    S.surveyActive = !!d.active; S.surveyCycleId = d.cycleId || 0; render();
+  }, () => {});
   if (!unsubTemplate19) unsubTemplate19 = onSnapshot(doc(db, "settings", "surveyTemplate19"), snap => { S.surveyTemplate19 = (snap.exists() && Array.isArray(snap.data().sections)) ? snap.data().sections : null; render(); }, () => {});
   if (!unsubTemplate30) unsubTemplate30 = onSnapshot(doc(db, "settings", "surveyTemplate30"), snap => { S.surveyTemplate30 = (snap.exists() && Array.isArray(snap.data().sections)) ? snap.data().sections : null; render(); }, () => {});
   if (!unsubEquipStatus) unsubEquipStatus = onSnapshot(collection(db, "equipmentStatus"), snap => { const map = {}; snap.docs.forEach(d => map[d.id] = d.data()); S.equipStatus = map; render(); }, () => {});
+}
+function subscribeMyStatus(uid) {
+  if (unsubMyStatus) return;
+  unsubMyStatus = onSnapshot(doc(db, "surveyStatus", uid), snap => { S.myStatus = snap.exists() ? snap.data() : null; render(); }, () => {});
 }
 function subscribeAdminData() {
   if (!unsubPending) unsubPending = onSnapshot(query(collection(db, "users"), where("status", "==", "pending")), snap => { S.pendingUsers = snap.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => {});
@@ -367,6 +389,7 @@ onAuthStateChanged(auth, async (user) => {
   S.user = user;
   try { S.profile = await ensureUserDoc(user.uid, user.displayName, user.email); } catch (e) { S.profile = null; }
   subscribeCommon();
+  subscribeMyStatus(user.uid);
   if (S.profile && (S.profile.role === "admin" || S.profile.role === "super_admin") && S.profile.status === "approved") subscribeAdminData();
   onSnapshot(doc(db, "users", user.uid), snap => {
     if (snap.exists()) {
@@ -396,31 +419,63 @@ async function rejectUser(u) {
   showToast(`تم رفض طلب ${u.name}`);
 }
 async function changeRole(u, role) { await updateDoc(doc(db, "users", u.id), { role }); showToast(`تم تحديث صلاحية ${u.name}`); }
-async function toggleSurvey(active) { await setDoc(doc(db, "settings", "survey"), { active, updatedBy: S.profile.email, updatedAt: serverTimestamp() }, { merge: true }); }
+async function toggleSurvey(active) {
+  const patch = { active, updatedBy: S.profile.email, updatedAt: serverTimestamp() };
+  if (active) patch.cycleId = Date.now(); // تفعيل جديد = جولة جديدة تتيح للجميع تعبئة الاستبيان من جديد
+  await setDoc(doc(db, "settings", "survey"), patch, { merge: true });
+}
 
-/* حذف نهائي لسجل مستخدم (لا يحذف حساب المصادقة نفسه، فقط سجل الصلاحيات — سيعود لوضع "بانتظار الموافقة" لو سجّل دخول مجدداً) */
+/* حذف نهائي لسجل مستخدم + جميع استبياناته (الملف الخاص به) — لا يحذف حساب المصادقة نفسه، فقط سجل الصلاحيات؛
+   سيعود لوضع "بانتظار الموافقة" لو سجّل دخول مجدداً */
 async function deleteUserRecord(u) {
   if (!u) return;
   if (u.role === "super_admin") { showToast("لا يمكن حذف حساب المسؤول الأعلى"); return; }
   if (u.id === S.user.uid) { showToast("لا يمكنك حذف حسابك الخاص"); return; }
-  if (!confirm(`هل أنت متأكد من حذف سجل "${u.name}" نهائياً؟ سيحتاج لتسجيل طلب انضمام جديد إذا رجع.`)) return;
-  try { await deleteDoc(doc(db, "users", u.id)); showToast(`تم حذف سجل ${u.name}`); }
-  catch (e) { showToast("تعذّر الحذف، حاول مجدداً"); }
+  try {
+    const subsSnap = await getDocs(query(collection(db, "submissions"), where("uid", "==", u.id)));
+    await Promise.all(subsSnap.docs.map(d => deleteDoc(d.ref)));
+    await deleteDoc(doc(db, "surveyStatus", u.id)).catch(() => {});
+    await deleteDoc(doc(db, "users", u.id));
+    showToast(`تم حذف سجل ${u.name} وجميع استبياناته`);
+  } catch (e) { showToast("تعذّر الحذف، تحقق من الاتصال وحاول مجدداً"); }
+}
+/* حذف كل ملفات (استبيانات) مستخدم فقط دون حذف حسابه */
+async function deleteUserFilesOnly(u) {
+  if (!u) return;
+  try {
+    const subsSnap = await getDocs(query(collection(db, "submissions"), where("uid", "==", u.id)));
+    await Promise.all(subsSnap.docs.map(d => deleteDoc(d.ref)));
+    showToast(`تم حذف جميع ملفات ${u.name}`);
+    render();
+  } catch (e) { showToast("تعذّر حذف الملفات، حاول مجدداً"); }
+}
+/* إعادة فتح الاستبيان لمستخدم معيّن حتى لو لم يتم تفعيل جولة جديدة للجميع */
+async function reopenUserSurvey(u) {
+  if (!u) return;
+  try {
+    await setDoc(doc(db, "surveyStatus", u.id), { reopened: true, reopenedBy: S.profile.email, reopenedAt: serverTimestamp() }, { merge: true });
+    showToast(`تم إعادة فتح الاستبيان لـ ${u.name} لإعادة التعبئة`);
+  } catch (e) { showToast("تعذّر تنفيذ الإجراء، حاول مجدداً"); }
 }
 
 /* حذف نهائي لاستبيان */
-async function deleteSubmission(id) {
-  if (!confirm("هل أنت متأكد من حذف هذا الاستبيان نهائياً؟ لا يمكن التراجع عن هذا الإجراء.")) return;
-  try {
-    await deleteDoc(doc(db, "submissions", id));
-    if (S.filesSelectedSub === id) S.filesSelectedSub = null;
-    showToast("تم حذف الاستبيان");
-    render();
-  } catch (e) { showToast("تعذّر الحذف، حاول مجدداً"); }
+function deleteSubmission(id) {
+  openConfirm("هل أنت متأكد من حذف هذا الاستبيان نهائياً؟ لا يمكن التراجع عن هذا الإجراء.", async () => {
+    try {
+      await deleteDoc(doc(db, "submissions", id));
+      if (S.filesSelectedSub === id) S.filesSelectedSub = null;
+      showToast("تم حذف الاستبيان");
+      render();
+    } catch (e) { showToast("تعذّر الحذف، حاول مجدداً"); }
+  });
 }
 
 async function markReviewed(subId) {
+  const sub = S.allSubmissions.find(s => s.id === subId);
   await updateDoc(doc(db, "submissions", subId), { reviewed: true, reviewedBy: S.profile.email, reviewedAt: serverTimestamp() });
+  if (sub && sub.equipmentCode) {
+    try { await setDoc(doc(db, "equipmentStatus", sub.equipmentCode), { reviewed: true, reviewedBy: S.profile.email, reviewedAt: serverTimestamp() }, { merge: true }); } catch (e) {}
+  }
   showToast("تم تسجيل مراجعة الاستبيان");
 }
 async function clearMaintenance(code) {
@@ -435,11 +490,12 @@ function exportEquipmentExcel() {
       "كود المعدة": e.code, "رقم اللوحة": e.plate_ar, "الحجم": e.size + " طن", "البلدية": e.zone || "",
       "حالة الفحص": levelAr, "عدد الملاحظات في آخر فحص": st.issueCount ?? "",
       "الفني الذي فحصها": st.lastSubmittedByTech || st.lastSubmittedBy || "",
+      "تمت مراجعة المسؤول": st.updatedAt ? (st.reviewed ? "نعم ✅" : "لا — بانتظار المراجعة") : "",
       "آخر تحديث": st.updatedAt && st.updatedAt.toDate ? st.updatedAt.toDate().toLocaleString("ar-SA") : "",
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 20 }];
+  ws["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 20 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "حالة الصهاريج");
   XLSX.writeFile(wb, `حالة_الصهاريج_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -463,12 +519,17 @@ async function saveTemplate() {
 
 /* ============================================================ تدفّق العضو ============================================================ */
 function resetMemberFlow() {
-  setState({ memberFlow: "pledge", pledgeChecked: false, techName: S.profile ? S.profile.name : "", techId: "", shift: "", selectedEquip: null, answers: {}, generalNotes: "", equipSearch: "" });
+  setState({ memberFlow: "info", pledgeChecked: false, techName: S.profile ? S.profile.name : "", techId: "", shift: "", selectedEquip: null, answers: {}, generalNotes: "", equipSearch: "" });
+  window.scrollTo(0, 0);
+}
+function memberAlreadyCompleted() {
+  return !!(S.myStatus && S.myStatus.cycleId === S.surveyCycleId && !S.myStatus.reopened);
 }
 function pickEquipment(eq) {
   const answers = {};
   getSurveyTemplate(eq.size).forEach(sec => sec.items.forEach(it => { answers[it.key] = { status: "", remark: "", photoUrl: "" }; }));
   setState({ selectedEquip: eq, answers, memberFlow: "survey" });
+  window.scrollTo(0, 0);
 }
 function setAnswerStatus(key, status) { S.answers[key] = { ...(S.answers[key] || {}), status }; render(); }
 function setAnswerRemark(key, remark) { S.answers[key] = { ...(S.answers[key] || {}), remark }; }
@@ -558,23 +619,43 @@ async function submitSurvey() {
   const eq = S.selectedEquip;
   const template = getSurveyTemplate(eq.size);
   if (!isSurveyComplete(template, S.answers)) { showToast("الرجاء الإجابة على جميع أسئلة الاستبيان قبل الإرسال"); return; }
+  if (!S.pledgeChecked) { showToast("الرجاء الموافقة على خطاب التعهد أولاً"); return; }
   setState({ submitBusy: true });
+  const { level, issueCount } = computeSeverity(template, S.answers);
+
+  /* الخطوة الأساسية: إرسال الاستبيان. أي فشل هنا فقط يُعتبر فشلاً حقيقياً بالإرسال */
+  let subId = null;
   try {
-    const { level, issueCount } = computeSeverity(template, S.answers);
     const subRef = await addDoc(collection(db, "submissions"), {
       uid: S.user.uid, userName: S.profile.name, userEmail: S.profile.email,
       technicianName: S.techName, technicianId: S.techId, shift: S.shift,
       equipmentCode: eq.code, plate: eq.plate_ar, size: eq.size, zone: eq.zone || "",
       answers: S.answers, generalNotes: S.generalNotes || "", pledgeAccepted: true,
-      issueLevel: level, issueCount, reviewed: false, createdAt: serverTimestamp(),
+      issueLevel: level, issueCount, reviewed: false, cycleId: S.surveyCycleId || 0,
+      createdAt: serverTimestamp(),
     });
+    subId = subRef.id;
+  } catch (e) {
+    setState({ submitBusy: false });
+    showToast("تعذّر إرسال الاستبيان، تحقق من الاتصال وحاول مجدداً");
+    return;
+  }
+
+  /* عمليات ثانوية (تحديث حالة المعدة وحالة الاستبيان الخاصة بالمستخدم) — لا تُفشل عملية الإرسال حتى لو تعطّلت */
+  try {
     await setDoc(doc(db, "equipmentStatus", eq.code), {
-      level, issueCount, plate: eq.plate_ar, zone: eq.zone || "", size: eq.size,
-      lastSubmissionId: subRef.id, lastSubmittedBy: S.profile.name, lastSubmittedByTech: S.techName,
+      level, issueCount, plate: eq.plate_ar, zone: eq.zone || "", size: eq.size, reviewed: false,
+      lastSubmissionId: subId, lastSubmittedBy: S.profile.name, lastSubmittedByTech: S.techName,
       updatedAt: serverTimestamp(),
     }, { merge: true });
-    setState({ memberFlow: "done", submitBusy: false });
-  } catch (e) { setState({ submitBusy: false }); showToast("تعذّر إرسال الاستبيان، تحقق من الاتصال وحاول مجدداً"); }
+  } catch (e) {}
+  try {
+    await setDoc(doc(db, "surveyStatus", S.user.uid), { cycleId: S.surveyCycleId || 0, reopened: false, lastSubmittedAt: serverTimestamp() }, { merge: true });
+  } catch (e) {}
+
+  setState({ submitBusy: false, memberFlow: "info", pledgeChecked: false, techId: "", answers: {}, selectedEquip: null });
+  showToast("تم إرسال الاستبيان بنجاح ✅");
+  window.scrollTo(0, 0);
 }
 
 /* ============================================================ العرض ============================================================ */
@@ -588,8 +669,22 @@ function render() {
   else if (S.view === "member") html = renderTopbar(true) + renderMember();
   else if (S.view === "admin") html = renderTopbar(true) + renderAdmin();
   if (S.toast) html += `<div class="toast">${esc(S.toast)}</div>`;
+  if (S.modal) html += renderModal();
   appEl.innerHTML = html;
   bindEvents();
+}
+function renderModal() {
+  const m = S.modal;
+  return `<div class="modal-overlay">
+    <div class="card" style="max-width:380px;width:100%">
+      <p style="font-size:14.5px;line-height:1.7;margin-bottom:14px;white-space:pre-line">${esc(m.message)}</p>
+      ${m.type === "prompt" ? `<input type="text" id="modalPromptInput" placeholder="${esc(m.placeholder || "")}" style="margin-bottom:14px" autofocus>` : ""}
+      <div style="display:flex;gap:10px">
+        <button class="btn block" data-act="modalConfirm">تأكيد</button>
+        <button class="btn outline block" data-act="modalCancel">إلغاء</button>
+      </div>
+    </div>
+  </div>`;
 }
 function renderLoading() { return `<div class="center-screen"><div style="text-align:center"><div class="spinner"></div><p class="muted" style="margin-top:14px">جارِ التحميل…</p></div></div>`; }
 function renderTopbar(withUser) {
@@ -622,29 +717,39 @@ function renderRejectedScreen() { return `<div class="center-screen"><div style=
 /* ---------- شاشات العضو ---------- */
 function renderMember() {
   if (!S.surveyActive) return `<div class="wrap"><div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:440px"><div class="big">📋</div><h2>لا يوجد استبيان حالياً</h2><p class="lead">لم يقم المسؤول بتفعيل الاستبيان بعد. الرجاء المحاولة لاحقاً.</p></div></div></div>`;
-  if (S.memberFlow === "pledge") return `<div class="wrap">${renderPledge()}</div>`;
+  if (memberAlreadyCompleted()) return `<div class="wrap">${renderAlreadyDoneScreen()}</div>`;
   if (S.memberFlow === "info") return `<div class="wrap">${renderInfoStep()}</div>`;
   if (S.memberFlow === "pick") return `<div class="wrap">${renderEquipPick()}</div>`;
   if (S.memberFlow === "survey") return `<div class="wrap">${renderSurveyForm()}</div>`;
-  if (S.memberFlow === "done") return `<div class="wrap">${renderDone()}</div>`;
+  if (S.memberFlow === "pledge") return `<div class="wrap">${renderPledge()}</div>`;
   return "";
+}
+function renderAlreadyDoneScreen() {
+  return `<div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:460px">
+    <div class="big">✅</div><h2>تم إرسال استبيانك لهذه الجولة</h2>
+    <p class="lead">تم استلام الاستبيان بنجاح. سيتم إعادة فتحه لك تلقائياً عند تفعيل جولة فحص جديدة للجميع، أو إذا طلب منك المسؤول إعادة تعبئته بشكل خاص.</p>
+  </div></div>`;
 }
 function renderPledge() {
   return `<div class="card" style="max-width:640px;margin:0 auto">
     <h1>خطاب تعهد</h1>
-    <p class="lead">الرجاء قراءة الإقرار التالي بعناية قبل بدء الفحص</p>
+    <p class="lead">قبل إرسال الاستبيان النهائي، الرجاء قراءة الإقرار التالي بعناية</p>
     <div class="pledge-box">${esc(PLEDGE_TEXT).replace(/\n/g, "<br>")}</div>
     <label class="checkline"><input type="checkbox" id="pledgeChk" ${S.pledgeChecked ? "checked" : ""}><span>لقد قرأت الإقرار أعلاه وأوافق على جميع ما ورد فيه</span></label>
-    <div style="margin-top:20px"><button class="btn block" data-act="acceptPledge" ${S.pledgeChecked ? "" : "disabled"}>أوافق وأبدأ الفحص</button></div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn outline" data-act="backToSurveyFromPledge">رجوع للاستبيان</button>
+      <button class="btn block" data-act="finalSubmitSurvey" ${(S.pledgeChecked && !S.submitBusy) ? "" : "disabled"}>${S.submitBusy ? "جارِ الإرسال…" : "أوافق وأرسل الاستبيان النهائي"}</button>
+    </div>
   </div>`;
 }
 function renderInfoStep() {
-  const complete = S.techName.trim() && S.techId.trim() && S.shift;
+  const idValid = S.techId.trim().length === 11;
+  const complete = S.techName.trim() && idValid && S.shift;
   return `<div class="card" style="max-width:560px;margin:0 auto">
     <h1>بيانات الفني</h1>
     <p class="lead">هذه البيانات تُحفظ مع الاستبيان لتوثيق من قام بالفحص فعلياً بشكل واضح.</p>
     <div class="field"><label class="field-label">اسم الفني</label><input type="text" id="techNameInput" value="${esc(S.techName)}" placeholder="اسم الفني الكامل"></div>
-    <div class="field"><label class="field-label">رقم الهوية</label><input type="text" id="techIdInput" value="${esc(S.techId)}" placeholder="رقم الهوية / الإقامة"></div>
+    <div class="field"><label class="field-label">رقم الهوية (11 رقماً)</label><input type="text" id="techIdInput" inputmode="numeric" pattern="[0-9]*" maxlength="11" value="${esc(S.techId)}" placeholder="أدخل 11 رقماً"><p class="muted" id="techIdHint" style="color:var(--red);margin-top:4px">${(S.techId && !idValid) ? `رقم الهوية يجب أن يكون 11 رقماً (${S.techId.length}/11)` : ""}</p></div>
     <div class="field"><label class="field-label">الشفت</label>
       <div class="shift-grid">
         <div class="shift-btn ${S.shift === "صباحي" ? "sel" : ""}" data-act="pickShift" data-shift="صباحي">☀️ صباحي</div>
@@ -698,8 +803,8 @@ function renderSurveyForm() {
   <div class="card">
     <label class="field-label">ملاحظات عامة إضافية (تفاصيل بشأن الإصلاح والصيانة المطلوبة)</label>
     <textarea id="generalNotes" placeholder="اكتب أي تفاصيل إضافية هنا (اختياري)…">${esc(S.generalNotes)}</textarea>
-    ${!complete ? `<div class="msg info" style="margin-top:14px">لا يمكن إرسال الاستبيان قبل الإجابة على جميع الأسئلة أعلاه.</div>` : ""}
-    <div style="margin-top:18px"><button class="btn block" data-act="submitSurvey" ${S.submitBusy || !complete ? "disabled" : ""}>${S.submitBusy ? "جارِ الإرسال…" : (complete ? "إرسال الاستبيان" : "أكمل جميع الأسئلة أولاً")}</button></div>
+    ${!complete ? `<div class="msg info" style="margin-top:14px">لا يمكن الاستمرار قبل الإجابة على جميع الأسئلة أعلاه.</div>` : ""}
+    <div style="margin-top:18px"><button class="btn block" data-act="goToPledge" ${complete ? "" : "disabled"}>${complete ? "التالي — التعهد والإرسال" : "أكمل جميع الأسئلة أولاً"}</button></div>
   </div>`;
 }
 function renderQuestionRow(it) {
@@ -717,13 +822,6 @@ function renderQuestionRow(it) {
 }
 function photoRowHtml(key, ans) {
   return `<div class="photo-row">${ans.photoUrl ? `<img class="photo-thumb" src="${esc(ans.photoUrl)}"><span class="photo-remove" data-act="removePhoto" data-key="${esc(key)}">إزالة الصورة ✕</span>` : `<button type="button" class="photo-btn" data-act="openCamera" data-key="${esc(key)}">📷 تصوير مباشر (كاميرا فقط)</button>`}</div>`;
-}
-function renderDone() {
-  return `<div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:460px">
-    <div class="big">✅</div><h2>تم إرسال الاستبيان بنجاح</h2>
-    <p class="lead">تم حفظ استبيان المعدة ${esc(S.selectedEquip.code)} في ملفك الخاص باسم الفني "${esc(S.techName)}"، وسيصل تنبيه بذلك للمسؤولين لمراجعته.</p>
-    <button class="btn" data-act="newSurvey">تعبئة استبيان جديد</button>
-  </div></div>`;
 }
 
 /* ---------- لوحة المسؤولين ---------- */
@@ -766,7 +864,10 @@ function renderAdminFiles() {
     const u = S.allUsers.find(x => x.id === S.filesSelectedUser);
     const subs = S.allSubmissions.filter(s => s.uid === S.filesSelectedUser);
     return `<div class="card"><button class="link-btn" data-act="backToFilesList">← رجوع لكل الملفات</button>
-      <h2 style="margin-top:10px">ملف: ${esc(u ? u.name : "")}</h2><p class="muted">${subs.length} استبيان محفوظ</p><div class="divider"></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-top:10px">
+        <div><h2 style="margin-bottom:2px">ملف: ${esc(u ? u.name : "")}</h2><p class="muted">${subs.length} استبيان محفوظ</p></div>
+        ${u ? `<div class="acts"><button class="btn outline sm" data-act="reopenUserSurvey" data-id="${u.id}">إعادة فتح الاستبيان له 🔓</button>${subs.length ? `<button class="btn danger sm" data-act="deleteUserFiles" data-id="${u.id}">حذف كل ملفاته 🗑</button>` : ""}</div>` : ""}
+      </div><div class="divider"></div>
       ${subs.length === 0 ? `<p class="muted">لا يوجد استبيانات بعد</p>` : subs.map(s => `<div class="list-row"><div class="main"><div class="t1">${esc(s.equipmentCode)} — ${esc(s.plate || "")} ${!s.reviewed ? `<span class="tag pending">لم تتم المراجعة</span>` : ""}</div><div class="t2">الفني: ${esc(s.technicianName || "—")} · ${fmtDate(s.createdAt)} · ${s.size} طن</div></div>
       <div class="acts"><button class="btn outline sm" data-act="viewSub" data-id="${s.id}">عرض التفاصيل</button><button class="btn danger sm" data-act="deleteSub" data-id="${s.id}">حذف 🗑</button></div></div>`).join("")}
     </div>`;
@@ -842,13 +943,21 @@ function renderAdminTemplate() {
   </div>`;
 }
 function renderAdminSurvey() {
-  return `<div class="card"><h2>حالة الاستبيان</h2><p class="lead">عند التفعيل، يستطيع الأعضاء الدخول وتعبئة استبيان الفحص. عند الإيقاف تظهر لهم رسالة "لا يوجد استبيان".</p>
+  return `<div class="card"><h2>حالة الاستبيان</h2><p class="lead">عند التفعيل، يستطيع الأعضاء الدخول وتعبئة استبيان الفحص. عند الإيقاف تظهر لهم رسالة "لا يوجد استبيان". كل تفعيل جديد يُعتبر جولة فحص جديدة تسمح لجميع الأعضاء (حتى من أرسل سابقاً) بتعبئة الاستبيان من جديد.</p>
     <div class="msg ${S.surveyActive ? "success" : "info"}">الحالة الحالية: ${S.surveyActive ? "مفعّل ✅" : "غير مفعّل ⏸️"}</div>
-    <button class="btn ${S.surveyActive ? "danger" : ""}" data-act="toggleSurvey" data-val="${S.surveyActive ? "off" : "on"}">${S.surveyActive ? "إيقاف الاستبيان" : "تفعيل الاستبيان"}</button>
+    <button class="btn ${S.surveyActive ? "danger" : ""}" data-act="toggleSurvey" data-val="${S.surveyActive ? "off" : "on"}">${S.surveyActive ? "إيقاف الاستبيان" : "تفعيل الاستبيان (جولة جديدة)"}</button>
   </div>`;
 }
 
 /* ============================================================ ربط الأحداث ============================================================ */
+function updateInfoNextBtn() {
+  const btn = document.querySelector('[data-act="confirmInfo"]');
+  const hint = document.getElementById("techIdHint");
+  const idValid = S.techId.trim().length === 11;
+  if (hint) hint.textContent = (S.techId && !idValid) ? `رقم الهوية يجب أن يكون 11 رقماً (${S.techId.length}/11)` : "";
+  if (btn) btn.disabled = !(S.techName.trim() && idValid && S.shift);
+}
+
 function bindEvents() {
   const authForm = document.getElementById("authForm");
   if (authForm) authForm.addEventListener("submit", (e) => {
@@ -872,10 +981,17 @@ function bindEvents() {
     wrap.innerHTML = html; bindDynamicClicks(wrap);
   });
 
+  /* هذه الحقول تُحدَّث مباشرة في الحالة دون استدعاء render() الكامل، لتجنّب فقدان تركيز الحقل واختفاء لوحة المفاتيح مع كل حرف */
   const techNameInput = document.getElementById("techNameInput");
-  if (techNameInput) techNameInput.addEventListener("input", (e) => { S.techName = e.target.value; render(); });
+  if (techNameInput) techNameInput.addEventListener("input", (e) => { S.techName = e.target.value; updateInfoNextBtn(); });
   const techIdInput = document.getElementById("techIdInput");
-  if (techIdInput) techIdInput.addEventListener("input", (e) => { S.techId = e.target.value; render(); });
+  if (techIdInput) techIdInput.addEventListener("input", (e) => {
+    let v = e.target.value.replace(/[^0-9]/g, "").slice(0, 11);
+    if (v !== e.target.value) e.target.value = v;
+    S.techId = v;
+    updateInfoNextBtn();
+  });
+  if (techNameInput || techIdInput) updateInfoNextBtn();
 
   const adminEquipInput = document.getElementById("adminEquipSearchInput");
   if (adminEquipInput) { adminEquipInput.addEventListener("input", (e) => { S.adminEquipSearch = e.target.value; render(); }); adminEquipInput.focus(); adminEquipInput.selectionStart = adminEquipInput.selectionEnd = adminEquipInput.value.length; }
@@ -903,6 +1019,9 @@ function bindEvents() {
     });
   });
 
+  const modalPromptInput = document.getElementById("modalPromptInput");
+  if (modalPromptInput) modalPromptInput.addEventListener("keydown", (e) => { if (e.key === "Enter") runModalConfirm(); });
+
   bindDynamicClicks(appEl);
 }
 
@@ -912,27 +1031,43 @@ function bindDynamicClicks(root) {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
       const act = el.dataset.act;
+      if (act === "modalConfirm") return runModalConfirm();
+      if (act === "modalCancel") return closeModal();
       if (act === "logout") return handleLogout();
       if (act === "switchAuth") return setState({ authMode: S.authMode === "login" ? "register" : "login", authError: "" });
       if (act === "forgotPass") {
-        const email = prompt("أدخل بريدك الإلكتروني لإرسال رابط إعادة تعيين كلمة المرور:");
-        if (email) sendPasswordResetEmail(auth, email.trim()).then(() => showToast("تم إرسال رابط إعادة التعيين إلى بريدك")).catch(() => showToast("تعذّر إرسال الرابط، تحقق من البريد"));
+        openPrompt("أدخل بريدك الإلكتروني لإرسال رابط إعادة تعيين كلمة المرور:", "name@example.com", (email) => {
+          if (email) sendPasswordResetEmail(auth, email.trim()).then(() => showToast("تم إرسال رابط إعادة التعيين إلى بريدك")).catch(() => showToast("تعذّر إرسال الرابط، تحقق من البريد"));
+        });
         return;
       }
-      if (act === "acceptPledge") return setState({ memberFlow: "info", techName: S.techName || (S.profile ? S.profile.name : "") });
       if (act === "pickShift") return setState({ shift: el.dataset.shift });
-      if (act === "confirmInfo") { if (!(S.techName.trim() && S.techId.trim() && S.shift)) return; return setState({ memberFlow: "pick" }); }
+      if (act === "confirmInfo") { if (!(S.techName.trim() && S.techId.trim().length === 11 && S.shift)) return; setState({ memberFlow: "pick" }); window.scrollTo(0, 0); return; }
       if (act === "pickEquip") { const eq = EQUIPMENT_BY_CODE[el.dataset.code]; if (eq) pickEquipment(eq); return; }
-      if (act === "changeEquip") return setState({ memberFlow: "pick", selectedEquip: null });
+      if (act === "changeEquip") { setState({ memberFlow: "pick", selectedEquip: null }); window.scrollTo(0, 0); return; }
       if (act === "removePhoto") return removePhoto(el.dataset.key);
       if (act === "openCamera") return openCameraModal(el.dataset.key);
-      if (act === "submitSurvey") return submitSurvey();
-      if (act === "newSurvey") return resetMemberFlow();
+      if (act === "goToPledge") {
+        if (!S.selectedEquip || !isSurveyComplete(getSurveyTemplate(S.selectedEquip.size), S.answers)) return;
+        setState({ memberFlow: "pledge" }); window.scrollTo(0, 0); return;
+      }
+      if (act === "backToSurveyFromPledge") { setState({ memberFlow: "survey" }); window.scrollTo(0, 0); return; }
+      if (act === "finalSubmitSurvey") { if (!S.pledgeChecked) return; return submitSurvey(); }
 
       if (act === "adminTab") { const patch = { adminTab: el.dataset.tab, filesSelectedUser: null, filesSelectedSub: null, _openEquip: null }; if (el.dataset.tab !== "template") patch.templateDraft = null; return setState(patch); }
       if (act === "approve") { const u = S.pendingUsers.find(x => x.id === el.dataset.id); if (u) approveUser(u, el.dataset.role); return; }
-      if (act === "reject") { const u = S.pendingUsers.find(x => x.id === el.dataset.id); if (u && confirm(`هل أنت متأكد من رفض طلب ${u.name}؟`)) rejectUser(u); return; }
-      if (act === "deleteUser") { const u = (S.pendingUsers.find(x => x.id === el.dataset.id)) || (S.allUsers.find(x => x.id === el.dataset.id)); if (u) deleteUserRecord(u); return; }
+      if (act === "reject") { const u = S.pendingUsers.find(x => x.id === el.dataset.id); if (u) openConfirm(`هل أنت متأكد من رفض طلب ${u.name}؟`, () => rejectUser(u)); return; }
+      if (act === "deleteUser") {
+        const u = (S.pendingUsers.find(x => x.id === el.dataset.id)) || (S.allUsers.find(x => x.id === el.dataset.id));
+        if (u) openConfirm(`هل أنت متأكد من حذف "${u.name}" نهائياً؟ سيتم حذف جميع استبياناته (ملفه) المرتبطة أيضاً.`, () => deleteUserRecord(u));
+        return;
+      }
+      if (act === "deleteUserFiles") {
+        const u = S.allUsers.find(x => x.id === el.dataset.id);
+        if (u) openConfirm(`هل أنت متأكد من حذف جميع استبيانات (ملف) "${u.name}" نهائياً؟ سيبقى حسابه دون حذف.`, () => deleteUserFilesOnly(u));
+        return;
+      }
+      if (act === "reopenUserSurvey") { const u = S.allUsers.find(x => x.id === el.dataset.id); if (u) reopenUserSurvey(u); return; }
       if (act === "openUserFile") return setState({ filesSelectedUser: el.dataset.id, filesSelectedSub: null });
       if (act === "backToFilesList") return setState({ filesSelectedUser: null, filesSelectedSub: null });
       if (act === "backToUserFile") return setState({ filesSelectedSub: null });
@@ -948,7 +1083,10 @@ function bindDynamicClicks(root) {
       if (act === "tplAddItem") { ensureTemplateDraft(); S.templateDraft[el.dataset.si].items.push({ key: "q_" + Date.now(), ar: "سؤال جديد", en: "" }); return render(); }
       if (act === "tplRemoveItem") { ensureTemplateDraft(); S.templateDraft[el.dataset.si].items.splice(el.dataset.ii, 1); return render(); }
       if (act === "tplAddSection") { ensureTemplateDraft(); S.templateDraft.push({ key: "sec_" + Date.now(), title: "قسم جديد", titleEn: "", items: [] }); return render(); }
-      if (act === "tplRemoveSection") { if (confirm("هل أنت متأكد من حذف هذا القسم بكل أسئلته؟")) { ensureTemplateDraft(); S.templateDraft.splice(el.dataset.si, 1); } return render(); }
+      if (act === "tplRemoveSection") {
+        openConfirm("هل أنت متأكد من حذف هذا القسم بكل أسئلته؟", () => { ensureTemplateDraft(); S.templateDraft.splice(el.dataset.si, 1); render(); });
+        return;
+      }
       if (act === "tplSave") return saveTemplate();
     });
   });
