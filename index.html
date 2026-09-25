@@ -153,7 +153,7 @@ a{color:var(--navy-2)}
 <div id="app"></div>
 <script type="module">
 /* ============================================================
-   نظام فحص الصهاريج اليومي — النسخة المحدّثة (2)
+   نظام فحص الصهاريج اليومي — النسخة المحدّثة (3: صور Base64 بدون Storage)
    ============================================================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -164,9 +164,6 @@ import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection,
   query, where, orderBy, onSnapshot, serverTimestamp, limit as qlimit, getDocs, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import {
-  getStorage, ref as sref, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm";
 
 const firebaseConfig = {
@@ -181,7 +178,6 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
-const storage = getStorage(fbApp);
 
 const SUPER_ADMIN_EMAIL = "abdullahalmalki484@gmail.com";
 
@@ -577,18 +573,36 @@ function setAnswerStatus(key, status) { S.answers[key] = { ...(S.answers[key] ||
 function setAnswerRemark(key, remark) { S.answers[key] = { ...(S.answers[key] || {}), remark }; }
 function setAnswerSelect(key, val) { S.answers[key] = { ...(S.answers[key] || {}), status: val }; render(); }
 
+/* ---- تخزين الصورة كنص Base64 مباشرة داخل Firestore (بدون Firebase Storage) ---- */
 async function attachPhotoBlob(key, blob) {
   if (!blob) return;
-  showToast("جارِ رفع الصورة…");
+  showToast("جارِ معالجة الصورة…");
   try {
-    const path = `submissions/${S.user.uid}/${Date.now()}_${key}.jpg`;
-    const r = sref(storage, path);
-    await uploadBytes(r, blob);
-    const url = await getDownloadURL(r);
-    S.answers[key] = { ...(S.answers[key] || {}), photoUrl: url };
+    const dataUrl = await compressImageBlob(blob, 700, 0.55);
+    S.answers[key] = { ...(S.answers[key] || {}), photoUrl: dataUrl };
     showToast("تم إرفاق الصورة");
     render();
-  } catch (e) { console.error("photo upload error:", e); showToast("تعذّر رفع الصورة، تحقق من صلاحيات Storage وحاول مجدداً"); }
+  } catch (e) {
+    console.error("photo process error:", e);
+    showToast("تعذّر معالجة الصورة، حاول مجدداً");
+  }
+}
+function compressImageBlob(blob, maxWidth, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxWidth) { height = Math.round(height * (maxWidth / width)); width = maxWidth; }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image load failed")); };
+    img.src = url;
+  });
 }
 function removePhoto(key) { S.answers[key] = { ...(S.answers[key] || {}), photoUrl: "" }; render(); }
 
@@ -683,7 +697,11 @@ async function submitSurvey() {
       lockedAt: serverTimestamp(), technicianName: S.techName, equipmentCode: eq.code,
     });
     setState({ memberFlow: "done", submitBusy: false });
-  } catch (e) { setState({ submitBusy: false }); showToast("تعذّر إرسال الاستبيان، تحقق من الاتصال وحاول مجدداً"); }
+  } catch (e) {
+    console.error("submit error:", e);
+    setState({ submitBusy: false });
+    showToast("تعذّر إرسال الاستبيان، قد يكون حجم الصور كبيراً — قلّل عدد الصور وحاول مجدداً");
+  }
 }
 
 /* ============================================================ العرض ============================================================ */
@@ -834,7 +852,7 @@ function renderQuestionRow(it) {
     ${photoRowHtml(it.key, ans)}</div>`;
 }
 function photoRowHtml(key, ans) {
-  return `<div class="photo-row">${ans.photoUrl ? `<img class="photo-thumb" src="${esc(ans.photoUrl)}" loading="lazy"><span class="photo-remove" data-act="removePhoto" data-key="${esc(key)}">إزالة الصورة ✕</span>` : `<button type="button" class="photo-btn" data-act="openCamera" data-key="${esc(key)}">📷 تصوير مباشر (كاميرا فقط)</button>`}</div>`;
+  return `<div class="photo-row">${ans.photoUrl ? `<img class="photo-thumb" src="${esc(ans.photoUrl)}"><span class="photo-remove" data-act="removePhoto" data-key="${esc(key)}">إزالة الصورة ✕</span>` : `<button type="button" class="photo-btn" data-act="openCamera" data-key="${esc(key)}">📷 تصوير مباشر (كاميرا فقط)</button>`}</div>`;
 }
 function renderDone() {
   return `<div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:460px">
@@ -915,7 +933,7 @@ function submissionDetailHtml(sub) {
     const a = (sub.answers || {})[it.key] || {}; const isIssue = a.status === "issue";
     return `<div class="q-row"><div class="q-top"><div class="q-text">${esc(it.ar)}</div>${it.type === "select" ? `<span class="tag ${(it.issueValues || []).includes(a.status) ? "issue" : "ok"}">${esc(a.status || "—")}</span>` : `<span class="tag ${isIssue ? "issue" : "ok"}">${isIssue ? "✗ ملاحظة" : "✓ سليم"}</span>`}</div>
     ${a.remark ? `<div class="muted">${esc(a.remark)}</div>` : ""}
-    ${a.photoUrl ? `<div class="photo-row"><a href="${esc(a.photoUrl)}" target="_blank" rel="noopener"><img class="photo-thumb" src="${esc(a.photoUrl)}" loading="lazy"></a></div>` : ""}</div>`;
+    ${a.photoUrl ? `<div class="photo-row"><a href="${esc(a.photoUrl)}" target="_blank"><img class="photo-thumb" src="${esc(a.photoUrl)}"></a></div>` : ""}</div>`;
   }).join("")}</div>`).join("")}
   ${sub.generalNotes ? `<div class="msg info" style="white-space:pre-line">${esc(sub.generalNotes)}</div>` : ""}`;
 }
@@ -1033,17 +1051,6 @@ function bindEvents() {
   });
 
   bindDynamicClicks(appEl);
-
-  /* عرض رسالة احترازية إذا تعذّر تحميل صورة (غالباً بسبب صلاحيات Firebase Storage) */
-  document.querySelectorAll("img.photo-thumb").forEach(img => {
-    if (img._errBound) return; img._errBound = true;
-    img.addEventListener("error", () => {
-      const span = document.createElement("span");
-      span.className = "muted"; span.style.color = "var(--red)";
-      span.textContent = "⚠️ تعذر تحميل الصورة — تحقق من صلاحيات Firebase Storage";
-      img.replaceWith(span);
-    });
-  });
 }
 
 function bindDynamicClicks(root) {
