@@ -147,13 +147,22 @@ a{color:var(--navy-2)}
 #cameraShotBtn{background:#fff;color:#0f2a43;border:none;border-radius:50%;width:66px;height:66px;font-size:26px;cursor:pointer}
 #cameraCancelBtn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:20px;padding:10px 20px;cursor:pointer;font-family:inherit;font-size:13.5px;}
 .camera-hint{color:#cfd7de;font-size:12.5px;margin-top:10px;text-align:center}
+#photoLightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1100;display:none;flex-direction:column;align-items:center;justify-content:center;padding:16px;}
+#photoLightbox.open{display:flex}
+#photoLightboxImg{max-width:min(96vw,1100px);max-height:78vh;border-radius:10px;object-fit:contain;box-shadow:0 8px 40px rgba(0,0,0,.45);background:#111}
+.photo-lightbox-actions{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+.photo-lightbox-actions button{font-family:inherit;font-size:14px;font-weight:700;border-radius:10px;padding:11px 20px;cursor:pointer;border:none}
+#photoLightboxClose{background:#fff;color:#0f2a43}
+#photoLightboxDownload{background:var(--navy-2);color:#fff}
+.photo-view-link{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--navy-2);background:#eef2f6;border:1px solid var(--line);padding:7px 14px;border-radius:20px;cursor:pointer;font-family:inherit;margin-top:6px}
+.photo-view-link:hover{background:#e2e8ef}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script type="module">
 /* ============================================================
-   نظام فحص الصهاريج اليومي — النسخة المحدّثة (5: صور مجانية بدون Storage — مستندات منفصلة + ضغط قوي)
+   نظام فحص الصهاريج اليومي — النسخة المحدّثة (6: عارض صور Lightbox بدل فتح data: في تبويب جديد)
    ============================================================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -742,6 +751,51 @@ function compressImageToDataUrl(blob, maxWidth, quality) {
 }
 function removePhoto(key) { S.answers[key] = { ...(S.answers[key] || {}), photoUrl: "" }; render(); }
 
+/* ---- عارض الصور (Lightbox) — بدل فتح data: في تبويب جديد ---- */
+function ensurePhotoLightbox() {
+  if (document.getElementById("photoLightbox")) return;
+  const div = document.createElement("div");
+  div.id = "photoLightbox";
+  div.innerHTML = `
+    <img id="photoLightboxImg" alt="صورة الفحص">
+    <div class="photo-lightbox-actions">
+      <button type="button" id="photoLightboxClose">إغلاق</button>
+      <button type="button" id="photoLightboxDownload">⬇️ تحميل الصورة</button>
+    </div>
+  `;
+  document.body.appendChild(div);
+  div.addEventListener("click", (e) => { if (e.target === div) closePhotoLightbox(); });
+  document.getElementById("photoLightboxClose").addEventListener("click", closePhotoLightbox);
+  document.getElementById("photoLightboxDownload").addEventListener("click", () => {
+    const img = document.getElementById("photoLightboxImg");
+    if (!img || !img.src) return;
+    const a = document.createElement("a");
+    a.href = img.src;
+    a.download = "inspection-photo-" + Date.now() + ".jpg";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closePhotoLightbox();
+  });
+}
+function openPhotoLightbox(src) {
+  if (!src) return;
+  ensurePhotoLightbox();
+  const box = document.getElementById("photoLightbox");
+  const img = document.getElementById("photoLightboxImg");
+  img.src = src;
+  box.classList.add("open");
+}
+function closePhotoLightbox() {
+  const box = document.getElementById("photoLightbox");
+  if (!box) return;
+  box.classList.remove("open");
+  const img = document.getElementById("photoLightboxImg");
+  if (img) img.removeAttribute("src");
+}
+
 /* ---- كاميرا مباشرة فقط (بدون إمكانية اختيار صورة من المعرض) ---- */
 function ensureCameraModal() {
   if (document.getElementById("cameraModalOverlay")) return;
@@ -1042,7 +1096,14 @@ function renderQuestionRow(it) {
     ${photoRowHtml(it.key, ans)}</div>`;
 }
 function photoRowHtml(key, ans) {
-  return `<div class="photo-row">${ans.photoUrl ? `<img class="photo-thumb" src="${esc(ans.photoUrl)}"><span class="photo-remove" data-act="removePhoto" data-key="${esc(key)}">إزالة الصورة ✕</span>` : `<button type="button" class="photo-btn" data-act="openCamera" data-key="${esc(key)}">📷 تصوير مباشر (كاميرا فقط)</button>`}</div>`;
+  if (ans.photoUrl) {
+    return `<div class="photo-row">
+      <img class="photo-thumb" src="${esc(ans.photoUrl)}" data-act="viewPhoto" data-src="${esc(ans.photoUrl)}" style="cursor:pointer" title="عرض الصورة">
+      <button type="button" class="photo-view-link" data-act="viewPhoto" data-src="${esc(ans.photoUrl)}">🔍 عرض الصورة</button>
+      <span class="photo-remove" data-act="removePhoto" data-key="${esc(key)}">إزالة الصورة ✕</span>
+    </div>`;
+  }
+  return `<div class="photo-row"><button type="button" class="photo-btn" data-act="openCamera" data-key="${esc(key)}">📷 تصوير مباشر (كاميرا فقط)</button></div>`;
 }
 function renderDone() {
   return `<div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:460px">
@@ -1126,9 +1187,12 @@ function submissionDetailHtml(sub) {
     ${(() => {
       const cached = (S.photoCache[sub.id] || {})[it.key];
       const src = cached || a.photoUrl || "";
-      if (src) return `<div class="photo-row"><a href="${esc(src)}" target="_blank"><img class="photo-thumb" src="${esc(src)}"></a></div>`;
+      if (src) return `<div class="photo-row" style="margin-top:8px">
+        <img class="photo-thumb" src="${esc(src)}" data-act="viewPhoto" data-src="${esc(src)}" style="cursor:pointer" title="عرض الصورة">
+        <button type="button" class="photo-view-link" data-act="viewPhoto" data-src="${esc(src)}">🔍 عرض الصورة</button>
+      </div>`;
       if (a.hasPhoto && S.photosLoading === sub.id) return `<div class="muted" style="margin-top:6px">جارِ تحميل الصورة…</div>`;
-      if (a.hasPhoto) return `<div class="muted" style="margin-top:6px">📷 صورة مرفقة (اضغط تحديث إن لم تظهر)</div>`;
+      if (a.hasPhoto) return `<div class="muted" style="margin-top:6px">📷 صورة مرفقة — جارِ التحميل أو أعد فتح التفاصيل</div>`;
       return "";
     })()}</div>`;
   }).join("")}</div>`).join("")}
@@ -1307,6 +1371,7 @@ function bindDynamicClicks(root) {
       if (act === "changeEquip") { setState({ memberFlow: "pick", selectedEquip: null }); scrollToTop(); return; }
       if (act === "removePhoto") return removePhoto(el.dataset.key);
       if (act === "openCamera") return openCameraModal(el.dataset.key);
+      if (act === "viewPhoto") return openPhotoLightbox(el.dataset.src);
       if (act === "submitSurvey") return submitSurvey();
       if (act === "newSurvey") return resetMemberFlow();
 
