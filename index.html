@@ -153,7 +153,7 @@ a{color:var(--navy-2)}
 <div id="app"></div>
 <script type="module">
 /* ============================================================
-   نظام فحص الصهاريج اليومي — النسخة المحدّثة (3: صور Base64 بدون Storage)
+   نظام فحص الصهاريج اليومي — النسخة المحدّثة (5: صور مجانية بدون Storage — مستندات منفصلة + ضغط قوي)
    ============================================================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -284,6 +284,8 @@ const S = {
   templateEditSize: 19, templateDraft: null,
 
   toast: null,
+  photoCache: {}, // submissionId -> { questionKey: dataUrl }
+  photosLoading: null,
 };
 
 let unsubUsers = null, unsubPending = null, unsubSettings = null, unsubSubs = null,
@@ -293,7 +295,19 @@ let unsubUsers = null, unsubPending = null, unsubSettings = null, unsubSubs = nu
 /* كاميرا مباشرة (خارج دورة الرندر لتفادي قطع البث) */
 let cameraStream = null, cameraPendingKey = null;
 
-function setState(patch) { Object.assign(S, patch); render(); }
+function setState(patch, opts) {
+  Object.assign(S, patch);
+  const preserveScroll = opts && opts.preserveScroll;
+  const scrollTop = preserveScroll ? (window.scrollY || document.documentElement.scrollTop || 0) : null;
+  render();
+  if (preserveScroll && scrollTop != null) {
+    requestAnimationFrame(() => { window.scrollTo(0, scrollTop); });
+  }
+}
+function scrollToTop() {
+  requestAnimationFrame(() => { window.scrollTo({ top: 0, behavior: "instant" in document.documentElement.style ? "instant" : "auto" }); });
+  try { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (_) {}
+}
 function showToast(msg) {
   S.toast = msg; render();
   clearTimeout(showToast._t);
@@ -427,6 +441,15 @@ async function toggleSurvey(active) { await setDoc(doc(db, "settings", "survey")
 async function deleteAllSubmissionsForUser(uid) {
   const snap = await getDocs(query(collection(db, "submissions"), where("uid", "==", uid)));
   if (snap.empty) return 0;
+  // حذف صور كل استبيان
+  for (const d of snap.docs) {
+    const photosSnap = await getDocs(query(collection(db, "submissionPhotos"), where("submissionId", "==", d.id)));
+    if (!photosSnap.empty) {
+      const b = writeBatch(db);
+      photosSnap.docs.forEach(p => b.delete(p.ref));
+      await b.commit();
+    }
+  }
   const batch = writeBatch(db);
   snap.docs.forEach(d => batch.delete(d.ref));
   await batch.commit();
@@ -467,8 +490,16 @@ async function deleteUserRecord(u) {
 async function deleteSubmission(id) {
   if (!confirm("هل أنت متأكد من حذف هذا الاستبيان نهائياً؟ لا يمكن التراجع عن هذا الإجراء.")) return;
   try {
+    // حذف الصور المرتبطة أولاً
+    const photosSnap = await getDocs(query(collection(db, "submissionPhotos"), where("submissionId", "==", id)));
+    if (!photosSnap.empty) {
+      const batch = writeBatch(db);
+      photosSnap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
     await deleteDoc(doc(db, "submissions", id));
     if (S.filesSelectedSub === id) S.filesSelectedSub = null;
+    if (S.photoCache[id]) delete S.photoCache[id];
     showToast("تم حذف الاستبيان");
     render();
   } catch (e) { showToast("تعذّر الحذف، حاول مجدداً"); }
@@ -497,6 +528,7 @@ function flattenTemplateQuestions(size) {
 }
 
 function exportEquipmentExcel() {
+  // ورقة 1: ملخص حالة كل صهريج
   const mainRows = EQUIPMENT.map(e => {
     const st = S.equipStatus[e.code] || {};
     const inspected = !!st.level;
@@ -513,23 +545,114 @@ function exportEquipmentExcel() {
     };
   });
 
+  // ورقة 2: تفصيل كل سؤال/إجابة لكل صهريج (يعكس الاستبيان كاملاً)
   const detailRows = [];
   EQUIPMENT.forEach(e => {
     const st = S.equipStatus[e.code];
-    if (!st || !st.answers) return;
-    const qmap = flattenTemplateQuestions(e.size);
-    Object.keys(st.answers).forEach(key => {
-      const a = st.answers[key], it = qmap[key];
-      if (!it || !a || !a.status) return;
-      const isIssue = it.type === "select" ? (it.issueValues || []).includes(a.status) : a.status === "issue";
+    const template = getSurveyTemplate(e.size);
+    if (!st || !st.answers) {
+      // حتى لو لم يُفحص: نضع صفاً يوضح أنه لم يُفحص بعد لكل سؤال اختياري — نكتفي بصف واحد
       detailRows.push({
-        "كود المعدة": e.code, "رقم اللوحة": e.plate_ar,
-        "السؤال": it.ar,
-        "النتيجة": it.type === "select" ? a.status : (isIssue ? "✗ ملاحظة" : "✓ سليم"),
-        "الحالة العامة": isIssue ? "يحتاج متابعة" : "سليم",
-        "ملاحظة إضافية": a.remark || "",
+        "كود المعدة": e.code, "رقم اللوحة": e.plate_ar, "الحجم": e.size + " طن", "البلدية": e.zone || "",
+        "القسم": "—", "السؤال": "لم يتم الفحص بعد", "النتيجة": "—", "الحالة العامة": "لم يُفحص",
+        "ملاحظة إضافية": "", "يوجد صورة؟": "لا", "رابط الصورة": "",
+        "الفني": "", "تاريخ آخر فحص": "",
+      });
+      return;
+    }
+    const lastTech = st.lastSubmittedByTech || st.lastSubmittedBy || "";
+    const lastAt = st.updatedAt && st.updatedAt.toDate ? st.updatedAt.toDate().toLocaleString("ar-SA") : "";
+    template.forEach(sec => {
+      (sec.items || []).forEach(it => {
+        const a = (st.answers || {})[it.key] || {};
+        const statusVal = a.status || "";
+        let isIssue = false;
+        let resultText = statusVal || "—";
+        if (it.type === "select") {
+          isIssue = (it.issueValues || []).includes(statusVal);
+        } else {
+          isIssue = statusVal === "issue";
+          resultText = statusVal === "issue" ? "✗ ملاحظة" : (statusVal === "ok" ? "✓ سليم" : "—");
+        }
+        detailRows.push({
+          "كود المعدة": e.code,
+          "رقم اللوحة": e.plate_ar,
+          "الحجم": e.size + " طن",
+          "البلدية": e.zone || "",
+          "القسم": sec.title || "",
+          "السؤال": it.ar || it.key,
+          "النتيجة": resultText,
+          "الحالة العامة": !statusVal ? "بدون إجابة" : (isIssue ? "يحتاج متابعة" : "سليم"),
+          "ملاحظة إضافية": a.remark || "",
+          "يوجد صورة؟": a.photoUrl ? "نعم" : "لا",
+          "رابط الصورة": (a.photoUrl && String(a.photoUrl).startsWith("http")) ? a.photoUrl : (a.photoUrl ? "(صورة مضمّنة)" : ""),
+          "الفني": lastTech,
+          "تاريخ آخر فحص": lastAt,
+        });
       });
     });
+  });
+
+  // ورقة 3: عرض عريض — عمود لكل سؤال (ملخص سريع لكل صهريج)
+  const allQuestionKeys = [];
+  const qLabel = {};
+  [19, 30].forEach(sz => {
+    getSurveyTemplate(sz).forEach(sec => (sec.items || []).forEach(it => {
+      if (!qLabel[it.key]) {
+        allQuestionKeys.push(it.key);
+        qLabel[it.key] = it.ar || it.key;
+      }
+    }));
+  });
+  const wideRows = EQUIPMENT.map(e => {
+    const st = S.equipStatus[e.code] || {};
+    const row = {
+      "كود المعدة": e.code,
+      "رقم اللوحة": e.plate_ar,
+      "الحجم": e.size + " طن",
+      "البلدية": e.zone || "",
+      "الحالة العامة": st.level === "critical" ? "حرجة" : st.level === "warning" ? "تحتاج متابعة" : st.level === "ok" ? "سليمة" : "لم يُفحص",
+      "عدد الملاحظات": st.issueCount ?? "",
+      "الفني": st.lastSubmittedByTech || st.lastSubmittedBy || "",
+      "آخر فحص": st.updatedAt && st.updatedAt.toDate ? st.updatedAt.toDate().toLocaleString("ar-SA") : "",
+    };
+    allQuestionKeys.forEach(k => {
+      const a = (st.answers || {})[k];
+      if (!a || !a.status) { row[qLabel[k]] = ""; return; }
+      const it = flattenTemplateQuestions(e.size)[k];
+      if (it && it.type === "select") row[qLabel[k]] = a.status + (a.remark ? " | " + a.remark : "");
+      else row[qLabel[k]] = (a.status === "issue" ? "ملاحظة" : a.status === "ok" ? "سليم" : a.status) + (a.remark ? " | " + a.remark : "");
+    });
+    return row;
+  });
+
+  // ورقة 4: كل الاستبيانات المرسلة (من submissions) إن وُجدت
+  const subRows = (S.allSubmissions || []).map(s => {
+    const base = {
+      "معرّف الاستبيان": s.id,
+      "كود المعدة": s.equipmentCode || "",
+      "اللوحة": s.plate || "",
+      "الحجم": (s.size || "") + " طن",
+      "البلدية": s.zone || "",
+      "الفني": s.technicianName || "",
+      "هوية الفني": s.technicianId || "",
+      "الشفت": s.shift || "",
+      "الحساب": s.userName || "",
+      "مستوى الملاحظات": s.issueLevel || "",
+      "عدد الملاحظات": s.issueCount ?? "",
+      "تمت المراجعة؟": s.reviewed ? "نعم" : "لا",
+      "تاريخ الإرسال": s.createdAt && s.createdAt.toDate ? s.createdAt.toDate().toLocaleString("ar-SA") : "",
+      "ملاحظات عامة": s.generalNotes || "",
+    };
+    const template = getSurveyTemplate(s.size || 19);
+    template.forEach(sec => (sec.items || []).forEach(it => {
+      const a = (s.answers || {})[it.key] || {};
+      let val = a.status || "";
+      if (it.type !== "select") val = a.status === "issue" ? "ملاحظة" : (a.status === "ok" ? "سليم" : val);
+      if (a.remark) val += (val ? " | " : "") + a.remark;
+      base[(sec.title || "") + " — " + (it.ar || it.key)] = val;
+    }));
+    return base;
   });
 
   const wb = XLSX.utils.book_new();
@@ -538,8 +661,16 @@ function exportEquipmentExcel() {
   XLSX.utils.book_append_sheet(wb, ws1, "حالة الصهاريج");
 
   const ws2 = XLSX.utils.json_to_sheet(detailRows.length ? detailRows : [{ "ملاحظة": "لا توجد تفاصيل بعد" }]);
-  ws2["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 16 }, { wch: 14 }, { wch: 30 }];
-  XLSX.utils.book_append_sheet(wb, ws2, "تفصيل الملاحظات");
+  ws2["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 22 }, { wch: 36 }, { wch: 18 }, { wch: 14 }, { wch: 28 }, { wch: 10 }, { wch: 40 }, { wch: 16 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, ws2, "تفصيل الاستبيان");
+
+  const ws3 = XLSX.utils.json_to_sheet(wideRows);
+  XLSX.utils.book_append_sheet(wb, ws3, "ملخص بكل الأسئلة");
+
+  if (subRows.length) {
+    const ws4 = XLSX.utils.json_to_sheet(subRows);
+    XLSX.utils.book_append_sheet(wb, ws4, "كل الاستبيانات");
+  }
 
   XLSX.writeFile(wb, `حالة_الصهاريج_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
@@ -568,17 +699,19 @@ function pickEquipment(eq) {
   const answers = {};
   getSurveyTemplate(eq.size).forEach(sec => sec.items.forEach(it => { answers[it.key] = { status: "", remark: "", photoUrl: "" }; }));
   setState({ selectedEquip: eq, answers, memberFlow: "survey" });
+  scrollToTop();
 }
 function setAnswerStatus(key, status) { S.answers[key] = { ...(S.answers[key] || {}), status }; render(); }
 function setAnswerRemark(key, remark) { S.answers[key] = { ...(S.answers[key] || {}), remark }; }
 function setAnswerSelect(key, val) { S.answers[key] = { ...(S.answers[key] || {}), status: val }; render(); }
 
-/* ---- تخزين الصورة كنص Base64 مباشرة داخل Firestore (بدون Firebase Storage) ---- */
+/* ---- صور مضغوطة + حفظ كل صورة في مستند Firestore منفصل (مجاني بدون Storage) ---- */
 async function attachPhotoBlob(key, blob) {
   if (!blob) return;
-  showToast("جارِ معالجة الصورة…");
+  showToast("جارِ ضغط الصورة…");
   try {
-    const dataUrl = await compressImageBlob(blob, 700, 0.55);
+    // ضغط قوي: عرض أقصى 480px وجودة 0.42 ≈ 20–50 كيلوبايت لكل صورة
+    const dataUrl = await compressImageToDataUrl(blob, 480, 0.42);
     S.answers[key] = { ...(S.answers[key] || {}), photoUrl: dataUrl };
     showToast("تم إرفاق الصورة");
     render();
@@ -587,7 +720,7 @@ async function attachPhotoBlob(key, blob) {
     showToast("تعذّر معالجة الصورة، حاول مجدداً");
   }
 }
-function compressImageBlob(blob, maxWidth, quality) {
+function compressImageToDataUrl(blob, maxWidth, quality) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -596,7 +729,10 @@ function compressImageBlob(blob, maxWidth, quality) {
       if (width > maxWidth) { height = Math.round(height * (maxWidth / width)); width = maxWidth; }
       const canvas = document.createElement("canvas");
       canvas.width = width; canvas.height = height;
-      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL("image/jpeg", quality));
     };
@@ -678,30 +814,84 @@ async function submitSurvey() {
   setState({ submitBusy: true });
   try {
     const { level, issueCount } = computeSeverity(template, S.answers);
+
+    // فصل الصور عن الإجابات حتى لا يتجاوز المستند حد 1MB
+    const answersLight = {};
+    const photoEntries = [];
+    Object.keys(S.answers || {}).forEach(key => {
+      const a = S.answers[key] || {};
+      const hasPhoto = !!(a.photoUrl && String(a.photoUrl).length > 32);
+      answersLight[key] = { status: a.status || "", remark: a.remark || "", hasPhoto };
+      if (hasPhoto) photoEntries.push({ key, photoUrl: a.photoUrl });
+    });
+
     const subRef = await addDoc(collection(db, "submissions"), {
       uid: S.user.uid, userName: S.profile.name, userEmail: S.profile.email,
       technicianName: S.techName, technicianId: S.techId, shift: S.shift,
       equipmentCode: eq.code, plate: eq.plate_ar, size: eq.size, zone: eq.zone || "",
-      answers: S.answers, generalNotes: S.generalNotes || "", pledgeAccepted: true,
-      issueLevel: level, issueCount, reviewed: false, createdAt: serverTimestamp(),
+      answers: answersLight, generalNotes: S.generalNotes || "", pledgeAccepted: true,
+      issueLevel: level, issueCount, reviewed: false, photoCount: photoEntries.length,
+      createdAt: serverTimestamp(),
     });
+
+    // كل صورة في مستند مستقل — يدعم عشرات/مئات الصور بدون تجاوز الحد
+    for (const pe of photoEntries) {
+      await addDoc(collection(db, "submissionPhotos"), {
+        submissionId: subRef.id,
+        uid: S.user.uid,
+        equipmentCode: eq.code,
+        questionKey: pe.key,
+        photoData: pe.photoUrl,
+        createdAt: serverTimestamp(),
+      });
+    }
+
     await setDoc(doc(db, "equipmentStatus", eq.code), {
       level, issueCount, plate: eq.plate_ar, zone: eq.zone || "", size: eq.size,
-      answers: S.answers,
+      answers: answersLight,
       lastSubmissionId: subRef.id, lastSubmittedBy: S.profile.name, lastSubmittedByTech: S.techName,
       reviewed: false, reviewedAt: null, reviewedBy: null,
       updatedAt: serverTimestamp(),
     }, { merge: true });
-    /* قفل العضو عن تعبئة استبيان جديد لمدة 10 ساعات */
+
     await setDoc(doc(db, "locks", S.user.uid), {
       lockedAt: serverTimestamp(), technicianName: S.techName, equipmentCode: eq.code,
     });
     setState({ memberFlow: "done", submitBusy: false });
+    scrollToTop();
   } catch (e) {
     console.error("submit error:", e);
     setState({ submitBusy: false });
-    showToast("تعذّر إرسال الاستبيان، قد يكون حجم الصور كبيراً — قلّل عدد الصور وحاول مجدداً");
+    const msg = (e && e.message) ? String(e.message) : "";
+    if (/exceeds|too large|size|1 MiB|1048576/i.test(msg)) {
+      showToast("حجم البيانات كبير جداً — احذف بعض الصور وحاول مجدداً");
+    } else {
+      showToast("تعذّر إرسال الاستبيان، حاول مجدداً");
+    }
   }
+}
+
+/* تحميل صور استبيان من مجموعة submissionPhotos */
+async function loadSubmissionPhotos(subId) {
+  if (!subId) return;
+  if (S.photoCache[subId]) return S.photoCache[subId];
+  if (S.photosLoading === subId) return;
+  S.photosLoading = subId;
+  try {
+    const snap = await getDocs(query(collection(db, "submissionPhotos"), where("submissionId", "==", subId)));
+    const map = {};
+    snap.docs.forEach(d => {
+      const data = d.data();
+      if (data.questionKey && data.photoData) map[data.questionKey] = data.photoData;
+    });
+    S.photoCache[subId] = map;
+  } catch (e) {
+    console.error("load photos error:", e);
+    S.photoCache[subId] = {};
+  }
+  S.photosLoading = null;
+  render();
+  return S.photoCache[subId];
 }
 
 /* ============================================================ العرض ============================================================ */
@@ -780,7 +970,7 @@ function renderInfoStep() {
     <p class="lead">هذه البيانات تُحفظ مع الاستبيان لتوثيق من قام بالفحص فعلياً بشكل واضح.</p>
     <div class="field"><label class="field-label">اسم الفني</label><input type="text" id="techNameInput" value="${esc(S.techName)}" placeholder="اسم الفني الكامل"></div>
     <div class="field"><label class="field-label">رقم الهوية (10 أرقام)</label><input type="tel" inputmode="numeric" maxlength="10" id="techIdInput" value="${esc(S.techId)}" placeholder="مثال: 1012345678">
-    ${S.techId && !idOk ? `<p class="muted" style="color:var(--red);margin-top:4px">الرجاء إدخال رقم هوية مكوّن من 10 أرقام بالضبط (${S.techId.length}/10)</p>` : ""}</div>
+    ${S.techId && !idOk ? `<p class="muted id-hint" style="color:var(--red);margin-top:4px">الرجاء إدخال رقم هوية مكوّن من 10 أرقام بالضبط (${S.techId.length}/10)</p>` : `<p class="muted id-hint" style="margin-top:4px"></p>`}</div>
     <div class="field"><label class="field-label">الشفت</label>
       <div class="shift-grid">
         <div class="shift-btn ${S.shift === "صباحي" ? "sel" : ""}" data-act="pickShift" data-shift="صباحي">☀️ صباحي</div>
@@ -933,7 +1123,14 @@ function submissionDetailHtml(sub) {
     const a = (sub.answers || {})[it.key] || {}; const isIssue = a.status === "issue";
     return `<div class="q-row"><div class="q-top"><div class="q-text">${esc(it.ar)}</div>${it.type === "select" ? `<span class="tag ${(it.issueValues || []).includes(a.status) ? "issue" : "ok"}">${esc(a.status || "—")}</span>` : `<span class="tag ${isIssue ? "issue" : "ok"}">${isIssue ? "✗ ملاحظة" : "✓ سليم"}</span>`}</div>
     ${a.remark ? `<div class="muted">${esc(a.remark)}</div>` : ""}
-    ${a.photoUrl ? `<div class="photo-row"><a href="${esc(a.photoUrl)}" target="_blank"><img class="photo-thumb" src="${esc(a.photoUrl)}"></a></div>` : ""}</div>`;
+    ${(() => {
+      const cached = (S.photoCache[sub.id] || {})[it.key];
+      const src = cached || a.photoUrl || "";
+      if (src) return `<div class="photo-row"><a href="${esc(src)}" target="_blank"><img class="photo-thumb" src="${esc(src)}"></a></div>`;
+      if (a.hasPhoto && S.photosLoading === sub.id) return `<div class="muted" style="margin-top:6px">جارِ تحميل الصورة…</div>`;
+      if (a.hasPhoto) return `<div class="muted" style="margin-top:6px">📷 صورة مرفقة (اضغط تحديث إن لم تظهر)</div>`;
+      return "";
+    })()}</div>`;
   }).join("")}</div>`).join("")}
   ${sub.generalNotes ? `<div class="msg info" style="white-space:pre-line">${esc(sub.generalNotes)}</div>` : ""}`;
 }
@@ -990,6 +1187,14 @@ function renderAdminSurvey() {
   </div>`;
 }
 
+function updateInfoStepButton() {
+  const btn = document.querySelector('[data-act="confirmInfo"]');
+  if (!btn) return;
+  const idOk = /^[0-9]{10}$/.test((S.techId || "").trim());
+  const complete = (S.techName || "").trim() && idOk && S.shift;
+  btn.disabled = !complete;
+}
+
 /* ============================================================ ربط الأحداث ============================================================ */
 function bindEvents() {
   const authForm = document.getElementById("authForm");
@@ -1015,17 +1220,46 @@ function bindEvents() {
   });
 
   const techNameInput = document.getElementById("techNameInput");
-  if (techNameInput) techNameInput.addEventListener("input", (e) => { S.techName = e.target.value; render(); });
+  if (techNameInput) techNameInput.addEventListener("input", (e) => {
+    S.techName = e.target.value;
+    updateInfoStepButton();
+  });
   const techIdInput = document.getElementById("techIdInput");
   if (techIdInput) techIdInput.addEventListener("input", (e) => {
     const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 10);
     e.target.value = v;
     S.techId = v;
-    render();
+    // تحديث رسالة التحقق والزر فقط بدون إعادة رسم كاملة (حتى لا يختفي الكيبورد)
+    let hint = techIdInput.parentElement.querySelector(".id-hint");
+    if (!hint) {
+      hint = document.createElement("p");
+      hint.className = "muted id-hint";
+      hint.style.marginTop = "4px";
+      techIdInput.parentElement.appendChild(hint);
+    }
+    if (S.techId && !/^[0-9]{10}$/.test(S.techId)) {
+      hint.style.color = "var(--red)";
+      hint.textContent = `الرجاء إدخال رقم هوية مكوّن من 10 أرقام بالضبط (${S.techId.length}/10)`;
+    } else {
+      hint.textContent = "";
+    }
+    updateInfoStepButton();
   });
 
   const adminEquipInput = document.getElementById("adminEquipSearchInput");
-  if (adminEquipInput) { adminEquipInput.addEventListener("input", (e) => { S.adminEquipSearch = e.target.value; render(); }); adminEquipInput.focus(); adminEquipInput.selectionStart = adminEquipInput.selectionEnd = adminEquipInput.value.length; }
+  if (adminEquipInput) {
+    adminEquipInput.addEventListener("input", (e) => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      const pos = e.target.selectionStart;
+      S.adminEquipSearch = e.target.value;
+      render();
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+        const inp = document.getElementById("adminEquipSearchInput");
+        if (inp) { inp.focus(); try { inp.setSelectionRange(pos, pos); } catch(_){} }
+      });
+    });
+  }
 
   const pledgeChk = document.getElementById("pledgeChk");
   if (pledgeChk) pledgeChk.addEventListener("change", (e) => { S.pledgeChecked = e.target.checked; render(); });
@@ -1066,11 +1300,11 @@ function bindDynamicClicks(root) {
         if (email) sendPasswordResetEmail(auth, email.trim()).then(() => showToast("تم إرسال رابط إعادة التعيين إلى بريدك")).catch(() => showToast("تعذّر إرسال الرابط، تحقق من البريد"));
         return;
       }
-      if (act === "acceptPledge") return setState({ memberFlow: "info", techName: S.techName || (S.profile ? S.profile.name : "") });
+      if (act === "acceptPledge") { setState({ memberFlow: "info", techName: S.techName || (S.profile ? S.profile.name : "") }); scrollToTop(); return; }
       if (act === "pickShift") return setState({ shift: el.dataset.shift });
-      if (act === "confirmInfo") { if (!(S.techName.trim() && /^[0-9]{10}$/.test(S.techId.trim()) && S.shift)) return; return setState({ memberFlow: "pick" }); }
+      if (act === "confirmInfo") { if (!(S.techName.trim() && /^[0-9]{10}$/.test(S.techId.trim()) && S.shift)) return; setState({ memberFlow: "pick" }); scrollToTop(); return; }
       if (act === "pickEquip") { const eq = EQUIPMENT_BY_CODE[el.dataset.code]; if (eq) pickEquipment(eq); return; }
-      if (act === "changeEquip") return setState({ memberFlow: "pick", selectedEquip: null });
+      if (act === "changeEquip") { setState({ memberFlow: "pick", selectedEquip: null }); scrollToTop(); return; }
       if (act === "removePhoto") return removePhoto(el.dataset.key);
       if (act === "openCamera") return openCameraModal(el.dataset.key);
       if (act === "submitSurvey") return submitSurvey();
@@ -1085,10 +1319,21 @@ function bindDynamicClicks(root) {
       if (act === "openUserFile") return setState({ filesSelectedUser: el.dataset.id, filesSelectedSub: null });
       if (act === "backToFilesList") return setState({ filesSelectedUser: null, filesSelectedSub: null });
       if (act === "backToUserFile") return setState({ filesSelectedSub: null });
-      if (act === "viewSub") { const sub = S.allSubmissions.find(s => s.id === el.dataset.id); return setState({ adminTab: "files", filesSelectedUser: sub ? sub.uid : S.filesSelectedUser, filesSelectedSub: el.dataset.id }); }
+      if (act === "viewSub") {
+        const sub = S.allSubmissions.find(s => s.id === el.dataset.id);
+        setState({ adminTab: "files", filesSelectedUser: sub ? sub.uid : S.filesSelectedUser, filesSelectedSub: el.dataset.id });
+        if (el.dataset.id) loadSubmissionPhotos(el.dataset.id);
+        return;
+      }
       if (act === "markReviewed") return markReviewed(el.dataset.id);
       if (act === "deleteSub") return deleteSubmission(el.dataset.id);
-      if (act === "viewEquipDetail") { S._openEquip = S._openEquip === el.dataset.code ? null : el.dataset.code; return render(); }
+      if (act === "viewEquipDetail") {
+        const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+        S._openEquip = S._openEquip === el.dataset.code ? null : el.dataset.code;
+        render();
+        requestAnimationFrame(() => { window.scrollTo(0, scrollY); });
+        return;
+      }
       if (act === "clearMaintenance") return clearMaintenance(el.dataset.code);
       if (act === "exportEquipExcel") return exportEquipmentExcel();
       if (act === "toggleSurvey") return toggleSurvey(el.dataset.val === "on");
