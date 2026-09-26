@@ -153,7 +153,7 @@ a{color:var(--navy-2)}
 <div id="app"></div>
 <script type="module">
 /* ============================================================
-   نظام فحص الصهاريج اليومي — النسخة المحدّثة (3: صور Base64 بدون Storage)
+   نظام فحص الصهاريج اليومي — النسخة المحدّثة (4: صور بمستندات منفصلة)
    ============================================================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -191,7 +191,7 @@ const EQUIPMENT = [{"code":"VT19-001","plate_ar":"ب ع د 6899","plate_en":"689
 const EQUIPMENT_BY_CODE = {};
 EQUIPMENT.forEach(e => EQUIPMENT_BY_CODE[e.code] = e);
 
-/* ---------- نص خطاب التعهد (موحّد لكل المعدات، ويشمل الفقرة النظامية المشددة) ---------- */
+/* ---------- نص خطاب التعهد ---------- */
 const PLEDGE_TEXT = `أقرّ أنا الموقّع أدناه بأنني قمت بإجراء الفحص اليومي للمعدة المذكورة بنفسي، بدقة وأمانة، وأن جميع البيانات والإجابات المدخلة في هذا الاستبيان صحيحة ومطابقة للحالة الفعلية للمعدة وقت الفحص، دون حذف أو تجاوز أي بند.
 
 كما أقرّ بأنني أتحمّل المسؤولية الكاملة عن صحة المعلومات المقدّمة، وأنه في حال وجود أي ملاحظة أو عطل تم رصده أثناء الفحص فقد تم توثيقه في هذا الاستبيان بشكل واضح.
@@ -228,7 +228,7 @@ const SURVEY_SECTIONS_VT19 = [
   ]}
 ];
 
-/* ---------- أقسام إضافية خاصة باستبيان صهاريج 30 طن (فحص فني تفصيلي) ---------- */
+/* ---------- أقسام إضافية خاصة باستبيان صهاريج 30 طن ---------- */
 const SURVEY_SECTIONS_VT30_EXTRA = [
   { key: "pumpunit", title: "فحص وحدة السحب والمضخة والتجهيزات الظاهرية", titleEn: "", items: [
     { key: "hydraulicOil", ar: "مستوى زيت الهيدروليك / زيت المضخة", type: "select", options: ["ممتلئ", "نصف ممتلئ", "فارغ"], issueValues: ["فارغ"] },
@@ -264,7 +264,7 @@ function getSurveyTemplate(size) {
 const S = {
   authReady: false, user: null, profile: null, view: "loading", authMode: "login", authError: "", authBusy: false,
 
-  memberFlow: "pledge", // pledge | info | pick | survey | done
+  memberFlow: "pledge",
   pledgeChecked: false,
   techName: "", techId: "", shift: "",
   equipSearch: "", selectedEquip: null,
@@ -274,8 +274,8 @@ const S = {
   surveyTemplate19: null, surveyTemplate30: null,
   equipStatus: {},
 
-  lockUntil: null, // قفل العضو الحالي عن تعبئة استبيان جديد
-  allLocks: {},    // (للمسؤولين) خريطة uid -> بيانات القفل
+  lockUntil: null,
+  allLocks: {},
 
   adminTab: "alerts",
   pendingUsers: [], allUsers: [], allSubmissions: [],
@@ -290,8 +290,32 @@ let unsubUsers = null, unsubPending = null, unsubSettings = null, unsubSubs = nu
     unsubTemplate19 = null, unsubTemplate30 = null, unsubEquipStatus = null,
     unsubLocks = null, unsubLock = null;
 
-/* كاميرا مباشرة (خارج دورة الرندر لتفادي قطع البث) */
+/* كاميرا مباشرة */
 let cameraStream = null, cameraPendingKey = null;
+
+/* ---------- ذاكرة صور مؤقتة (photoId -> dataUrl) — بديل عن Firebase Storage ---------- */
+const photoCache = {};
+async function ensurePhotoLoaded(photoId) {
+  if (!photoId || photoCache[photoId] !== undefined) return;
+  photoCache[photoId] = null; // علامة "جارِ التحميل" لتفادي طلبات مكررة
+  try {
+    const snap = await getDoc(doc(db, "photos", photoId));
+    photoCache[photoId] = snap.exists() ? (snap.data().dataUrl || "") : "";
+  } catch (e) {
+    photoCache[photoId] = "";
+  }
+  render();
+}
+function photoThumbHtml(photoId, opts) {
+  opts = opts || {};
+  if (!photoId) return "";
+  const cached = photoCache[photoId];
+  if (cached === undefined) { ensurePhotoLoaded(photoId); return `<span class="muted">⏳ جارِ تحميل الصورة…</span>`; }
+  if (cached === null) return `<span class="muted">⏳ جارِ تحميل الصورة…</span>`;
+  if (cached === "") return `<span class="muted" style="color:var(--red)">⚠️ تعذر تحميل الصورة</span>`;
+  const img = `<img class="photo-thumb" src="${esc(cached)}" loading="lazy">`;
+  return opts.linkFull ? `<a href="${esc(cached)}" target="_blank" rel="noopener">${img}</a>` : img;
+}
 
 function setState(patch) { Object.assign(S, patch); render(); }
 function showToast(msg) {
@@ -423,13 +447,26 @@ async function rejectUser(u) {
 async function changeRole(u, role) { await updateDoc(doc(db, "users", u.id), { role }); showToast(`تم تحديث صلاحية ${u.name}`); }
 async function toggleSurvey(active) { await setDoc(doc(db, "settings", "survey"), { active, updatedBy: S.profile.email, updatedAt: serverTimestamp() }, { merge: true }); }
 
-/* حذف كل استبيانات مستخدم معيّن (يُستخدم عند حذف الحساب أو عند حذف الملف بالكامل) */
+/* ---------- أدوات حذف الصور المرتبطة بإجابات ---------- */
+function collectPhotoIds(answers) {
+  const ids = [];
+  if (!answers) return ids;
+  Object.values(answers).forEach(a => { if (a && a.photoId) ids.push(a.photoId); });
+  return ids;
+}
+async function deletePhotosByIds(ids) {
+  await Promise.all(ids.map(pid => deleteDoc(doc(db, "photos", pid)).catch(() => {})));
+}
+
+/* حذف كل استبيانات مستخدم معيّن (مع صورها) */
 async function deleteAllSubmissionsForUser(uid) {
   const snap = await getDocs(query(collection(db, "submissions"), where("uid", "==", uid)));
   if (snap.empty) return 0;
   const batch = writeBatch(db);
-  snap.docs.forEach(d => batch.delete(d.ref));
+  const photoIds = [];
+  snap.docs.forEach(d => { batch.delete(d.ref); photoIds.push(...collectPhotoIds(d.data().answers)); });
   await batch.commit();
+  await deletePhotosByIds(photoIds);
   return snap.size;
 }
 
@@ -449,7 +486,7 @@ async function adminUnlockUser(u) {
   catch (e) { showToast("تعذّر فتح القفل، حاول مجدداً"); }
 }
 
-/* حذف نهائي لسجل مستخدم — يحذف أيضاً كل استبياناته وقفله معه */
+/* حذف نهائي لسجل مستخدم — يحذف أيضاً كل استبياناته وصورها وقفله معه */
 async function deleteUserRecord(u) {
   if (!u) return;
   if (u.role === "super_admin") { showToast("لا يمكن حذف حساب المسؤول الأعلى"); return; }
@@ -463,11 +500,13 @@ async function deleteUserRecord(u) {
   } catch (e) { showToast("تعذّر الحذف، حاول مجدداً"); }
 }
 
-/* حذف نهائي لاستبيان */
+/* حذف نهائي لاستبيان (مع صوره) */
 async function deleteSubmission(id) {
   if (!confirm("هل أنت متأكد من حذف هذا الاستبيان نهائياً؟ لا يمكن التراجع عن هذا الإجراء.")) return;
   try {
+    const sub = S.allSubmissions.find(s => s.id === id);
     await deleteDoc(doc(db, "submissions", id));
+    if (sub) await deletePhotosByIds(collectPhotoIds(sub.answers));
     if (S.filesSelectedSub === id) S.filesSelectedSub = null;
     showToast("تم حذف الاستبيان");
     render();
@@ -528,6 +567,7 @@ function exportEquipmentExcel() {
         "النتيجة": it.type === "select" ? a.status : (isIssue ? "✗ ملاحظة" : "✓ سليم"),
         "الحالة العامة": isIssue ? "يحتاج متابعة" : "سليم",
         "ملاحظة إضافية": a.remark || "",
+        "يوجد صورة؟": a.photoId ? "نعم" : "لا",
       });
     });
   });
@@ -538,7 +578,7 @@ function exportEquipmentExcel() {
   XLSX.utils.book_append_sheet(wb, ws1, "حالة الصهاريج");
 
   const ws2 = XLSX.utils.json_to_sheet(detailRows.length ? detailRows : [{ "ملاحظة": "لا توجد تفاصيل بعد" }]);
-  ws2["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 16 }, { wch: 14 }, { wch: 30 }];
+  ws2["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 16 }, { wch: 14 }, { wch: 30 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, ws2, "تفصيل الملاحظات");
 
   XLSX.writeFile(wb, `حالة_الصهاريج_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -566,25 +606,29 @@ function resetMemberFlow() {
 }
 function pickEquipment(eq) {
   const answers = {};
-  getSurveyTemplate(eq.size).forEach(sec => sec.items.forEach(it => { answers[it.key] = { status: "", remark: "", photoUrl: "" }; }));
+  getSurveyTemplate(eq.size).forEach(sec => sec.items.forEach(it => { answers[it.key] = { status: "", remark: "", photoId: "" }; }));
   setState({ selectedEquip: eq, answers, memberFlow: "survey" });
 }
 function setAnswerStatus(key, status) { S.answers[key] = { ...(S.answers[key] || {}), status }; render(); }
 function setAnswerRemark(key, remark) { S.answers[key] = { ...(S.answers[key] || {}), remark }; }
 function setAnswerSelect(key, val) { S.answers[key] = { ...(S.answers[key] || {}), status: val }; render(); }
 
-/* ---- تخزين الصورة كنص Base64 مباشرة داخل Firestore (بدون Firebase Storage) ---- */
+/* ---- تخزين الصورة في مستند خاص بها (منفصل) داخل مجموعة photos — لضمان إرسال جميع الصور دائماً ---- */
 async function attachPhotoBlob(key, blob) {
   if (!blob) return;
-  showToast("جارِ معالجة الصورة…");
+  showToast("جارِ رفع الصورة…");
   try {
     const dataUrl = await compressImageBlob(blob, 700, 0.55);
-    S.answers[key] = { ...(S.answers[key] || {}), photoUrl: dataUrl };
+    const photoRef = await addDoc(collection(db, "photos"), {
+      dataUrl, uid: S.user.uid, createdAt: serverTimestamp(),
+    });
+    photoCache[photoRef.id] = dataUrl;
+    S.answers[key] = { ...(S.answers[key] || {}), photoId: photoRef.id };
     showToast("تم إرفاق الصورة");
     render();
   } catch (e) {
-    console.error("photo process error:", e);
-    showToast("تعذّر معالجة الصورة، حاول مجدداً");
+    console.error("photo upload error:", e);
+    showToast("تعذّر رفع الصورة، تحقق من الاتصال وحاول مجدداً");
   }
 }
 function compressImageBlob(blob, maxWidth, quality) {
@@ -604,9 +648,15 @@ function compressImageBlob(blob, maxWidth, quality) {
     img.src = url;
   });
 }
-function removePhoto(key) { S.answers[key] = { ...(S.answers[key] || {}), photoUrl: "" }; render(); }
+function removePhoto(key) {
+  const ans = S.answers[key];
+  const oldId = ans && ans.photoId;
+  S.answers[key] = { ...(ans || {}), photoId: "" };
+  render();
+  if (oldId) deleteDoc(doc(db, "photos", oldId)).catch(() => {});
+}
 
-/* ---- كاميرا مباشرة فقط (بدون إمكانية اختيار صورة من المعرض) ---- */
+/* ---- كاميرا مباشرة فقط ---- */
 function ensureCameraModal() {
   if (document.getElementById("cameraModalOverlay")) return;
   const div = document.createElement("div");
@@ -652,7 +702,7 @@ function capturePhotoNow() {
   canvas.toBlob((blob) => { closeCameraModal(); if (blob) attachPhotoBlob(key, blob); }, "image/jpeg", 0.85);
 }
 
-/* شدّة الأعطال بناءً على issueValues لعناصر select، وعلى status لعناصر سليم/ملاحظة */
+/* شدّة الأعطال */
 function computeSeverity(template, answers) {
   let issueCount = 0;
   template.forEach(sec => sec.items.forEach(it => {
@@ -692,7 +742,6 @@ async function submitSurvey() {
       reviewed: false, reviewedAt: null, reviewedBy: null,
       updatedAt: serverTimestamp(),
     }, { merge: true });
-    /* قفل العضو عن تعبئة استبيان جديد لمدة 10 ساعات */
     await setDoc(doc(db, "locks", S.user.uid), {
       lockedAt: serverTimestamp(), technicianName: S.techName, equipmentCode: eq.code,
     });
@@ -700,7 +749,7 @@ async function submitSurvey() {
   } catch (e) {
     console.error("submit error:", e);
     setState({ submitBusy: false });
-    showToast("تعذّر إرسال الاستبيان، قد يكون حجم الصور كبيراً — قلّل عدد الصور وحاول مجدداً");
+    showToast("تعذّر إرسال الاستبيان، تحقق من الاتصال وحاول مجدداً");
   }
 }
 
@@ -839,7 +888,7 @@ function renderSurveyForm() {
   </div>`;
 }
 function renderQuestionRow(it) {
-  const ans = S.answers[it.key] || { status: "", remark: "", photoUrl: "" };
+  const ans = S.answers[it.key] || { status: "", remark: "", photoId: "" };
   if (it.type === "select") {
     return `<div class="q-row"><div class="q-top"><div class="q-text">${esc(it.ar)}${it.en ? `<span class="en">${esc(it.en)}</span>` : ""}</div></div>
     <select data-select="${it.key}"><option value="" ${ans.status === "" ? "selected" : ""}>اختر…</option>${(it.options || []).map(o => `<option value="${esc(o)}" ${ans.status === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>
@@ -852,7 +901,10 @@ function renderQuestionRow(it) {
     ${photoRowHtml(it.key, ans)}</div>`;
 }
 function photoRowHtml(key, ans) {
-  return `<div class="photo-row">${ans.photoUrl ? `<img class="photo-thumb" src="${esc(ans.photoUrl)}"><span class="photo-remove" data-act="removePhoto" data-key="${esc(key)}">إزالة الصورة ✕</span>` : `<button type="button" class="photo-btn" data-act="openCamera" data-key="${esc(key)}">📷 تصوير مباشر (كاميرا فقط)</button>`}</div>`;
+  if (ans.photoId) {
+    return `<div class="photo-row">${photoThumbHtml(ans.photoId)}<span class="photo-remove" data-act="removePhoto" data-key="${esc(key)}">إزالة الصورة ✕</span></div>`;
+  }
+  return `<div class="photo-row"><button type="button" class="photo-btn" data-act="openCamera" data-key="${esc(key)}">📷 تصوير مباشر (كاميرا فقط)</button></div>`;
 }
 function renderDone() {
   return `<div class="center-screen" style="min-height:60vh"><div class="card empty" style="max-width:460px">
@@ -933,7 +985,7 @@ function submissionDetailHtml(sub) {
     const a = (sub.answers || {})[it.key] || {}; const isIssue = a.status === "issue";
     return `<div class="q-row"><div class="q-top"><div class="q-text">${esc(it.ar)}</div>${it.type === "select" ? `<span class="tag ${(it.issueValues || []).includes(a.status) ? "issue" : "ok"}">${esc(a.status || "—")}</span>` : `<span class="tag ${isIssue ? "issue" : "ok"}">${isIssue ? "✗ ملاحظة" : "✓ سليم"}</span>`}</div>
     ${a.remark ? `<div class="muted">${esc(a.remark)}</div>` : ""}
-    ${a.photoUrl ? `<div class="photo-row"><a href="${esc(a.photoUrl)}" target="_blank"><img class="photo-thumb" src="${esc(a.photoUrl)}"></a></div>` : ""}</div>`;
+    ${a.photoId ? `<div class="photo-row">${photoThumbHtml(a.photoId, { linkFull: true })}</div>` : ""}</div>`;
   }).join("")}</div>`).join("")}
   ${sub.generalNotes ? `<div class="msg info" style="white-space:pre-line">${esc(sub.generalNotes)}</div>` : ""}`;
 }
